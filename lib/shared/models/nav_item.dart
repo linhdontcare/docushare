@@ -1,0 +1,16 @@
+import 'package:flutter/material.dart';
+
+/// Model đại diện cho một mục điều hướng trong NavigationRail / NavigationBar
+class NavItem {
+  final String label;
+  final IconData icon;
+  final IconData selectedIcon;
+  final String? badge;
+
+  const NavItem({
+    required this.label,
+    required this.icon,
+    required this.selectedIcon,
+    this.badge,
+  });
+}
