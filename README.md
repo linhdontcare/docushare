@@ -147,7 +147,8 @@ flutter test
 - [x] Khởi tạo khung dự án Flutter đa nền tảng (Android & Web)
 - [x] Thiết lập cấu trúc Feature-First & Design System Material 3
 - [x] Xây dựng Dashboard mẫu và các màn hình placeholder cho từng module
-- [ ] Tích hợp Firebase Authentication & Cloud Messaging
+- [x] Hoàn thiện module Xác thực người dùng, Phân quyền RBAC & Hồ sơ cá nhân (`features/auth` - Dương Quốc Vượng)
+- [x] Tích hợp Firebase Authentication, Cloud Firestore (RBAC) & Cloud Messaging (Project: `docushare-th2-3a9b`)
 - [ ] Tích hợp Supabase Database & Storage cho tệp tài liệu
 - [ ] Hoàn thiện nghiệp vụ từng module và phát triển thuật toán Recommendation
 - [ ] Kiểm thử tích hợp (Integration Test) & Đóng gói sản phẩm
