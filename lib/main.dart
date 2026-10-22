@@ -1,11 +1,27 @@
 import 'package:flutter/material.dart';
+import 'core/config/firebase_config.dart';
 import 'core/constants/app_strings.dart';
 import 'core/theme/app_theme.dart';
+import 'shared/services/firebase_notification_service.dart';
 import 'shared/widgets/responsive_navigation_scaffold.dart';
 
-void main() {
+Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
+
+  // Khởi tạo Firebase chính thức kết nối dự án thực tế
+  try {
+    await FirebaseConfig.initialize();
+  } catch (e) {
+    debugPrint('⚠️ [Firebase] Lỗi khởi tạo Firebase Core: $e');
+  }
+
+  // Hiển thị ngay giao diện ứng dụng DocuShare
   runApp(const DocuShareApp());
+
+  // Khởi tạo dịch vụ thông báo đẩy FCM (chạy nền, không chặn giao diện)
+  FirebaseNotificationService.instance.initialize().catchError((e) {
+    debugPrint('⚠️ [FCM] Lỗi khởi tạo FCM: $e');
+  });
 }
 
 /// Ứng dụng DocuShare - Hệ thống Quản lý Tài liệu Đa nền tảng
