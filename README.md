@@ -21,10 +21,10 @@
 
 | Thành viên | Vai trò | Phụ trách chính | Module tương ứng |
 | :--- | :--- | :--- | :--- |
-| **Nhóm trưởng** | Lead Developer | Khởi tạo Project, Quản lý Git/Repo, Thuật toán Đề xuất, Tích hợp & Kiểm thử tổng thể | `features/recommendation`, `core/`, `shared/` |
-| **Thành viên 2** | Developer | Xác thực người dùng & Phân quyền, Hồ sơ cá nhân | `features/auth` |
-| **Thành viên 3** | Developer | Quản lý kho tài liệu, Tải lên tệp & Hệ thống gắn thẻ Tag | `features/documents`, `features/tagging` |
-| **Thành viên 4** | Developer | Quản lý mượn - trả, Vị trí kho lưu trữ (QR Code) & Chia sẻ | `features/borrowing`, `features/location`, `features/sharing` |
+| **Mã Khánh Linh** | Lead Developer | Khởi tạo Project, Quản lý Git/Repo, Thuật toán Đề xuất, Tích hợp & Kiểm thử tổng thể | `features/recommendation`, `core/`, `shared/` |
+| **Dương Quốc Vượng** | Developer | Xác thực người dùng & Phân quyền, Hồ sơ cá nhân | `features/auth` |
+| **Vũ Bá Đài** | Developer | Quản lý kho tài liệu, Tải lên tệp & Hệ thống gắn thẻ Tag | `features/documents`, `features/tagging` |
+| **Lê Văn Dân** | Developer | Quản lý mượn - trả, Vị trí kho lưu trữ & Chia sẻ | `features/borrowing`, `features/location`, `features/sharing` |
 
 ---
 
