@@ -1,42 +1,47 @@
 import 'package:flutter/material.dart';
 import '../../../core/constants/app_colors.dart';
 import '../../../core/constants/app_constants.dart';
+import 'create_borrowing_dialog.dart';
 
 /// Màn hình Quản lý Mượn - Trả Tài liệu (Borrowing Feature)
 /// Quản lý quy trình mượn, gia hạn, trả tài liệu và hạn chót
-class BorrowingPage extends StatelessWidget {
+class BorrowingPage extends StatefulWidget {
   const BorrowingPage({super.key});
 
   @override
+  State<BorrowingPage> createState() => _BorrowingPageState();
+}
+
+class _BorrowingPageState extends State<BorrowingPage> {
+  final List<Map<String, dynamic>> borrowings = [
+    {
+      'docTitle': 'Giáo trình Cấu trúc Dữ liệu & Giải thuật',
+      'borrower': 'Nguyễn Văn B (MSSV: 2102001)',
+      'dueDate': '28/10/2026',
+      'daysLeft': 'Còn 6 ngày',
+      'status': 'Đang mượn',
+      'statusColor': AppColors.info,
+    },
+    {
+      'docTitle': 'Lập trình Thiết bị Di động Nâng cao',
+      'borrower': 'Trần Thị C (MSSV: 2102002)',
+      'dueDate': '23/10/2026',
+      'daysLeft': 'Hết hạn ngày mai',
+      'status': 'Sắp đến hạn',
+      'statusColor': AppColors.warning,
+    },
+    {
+      'docTitle': 'Kiến trúc Máy tính và Hợp ngữ',
+      'borrower': 'Lê Văn D (MSSV: 2102003)',
+      'dueDate': '15/10/2026',
+      'daysLeft': 'Đã hoàn tất',
+      'status': 'Đã trả',
+      'statusColor': AppColors.success,
+    },
+  ];
+  @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-
-    final borrowings = [
-      {
-        'docTitle': 'Giáo trình Cấu trúc Dữ liệu & Giải thuật',
-        'borrower': 'Nguyễn Văn B (MSSV: 2102001)',
-        'dueDate': '28/10/2026',
-        'daysLeft': 'Còn 6 ngày',
-        'status': 'Đang mượn',
-        'statusColor': AppColors.info,
-      },
-      {
-        'docTitle': 'Lập trình Thiết bị Di động Nâng cao',
-        'borrower': 'Trần Thị C (MSSV: 2102002)',
-        'dueDate': '23/10/2026',
-        'daysLeft': 'Hết hạn ngày mai',
-        'status': 'Sắp đến hạn',
-        'statusColor': AppColors.warning,
-      },
-      {
-        'docTitle': 'Kiến trúc Máy tính và Hợp ngữ',
-        'borrower': 'Lê Văn D (MSSV: 2102003)',
-        'dueDate': '15/10/2026',
-        'daysLeft': 'Đã hoàn tất',
-        'status': 'Đã trả',
-        'statusColor': AppColors.success,
-      },
-    ];
 
     return Scaffold(
       body: SingleChildScrollView(
@@ -67,7 +72,27 @@ class BorrowingPage extends StatelessWidget {
                   ),
                 ),
                 FilledButton.icon(
-                  onPressed: () {},
+                  onPressed: () async {
+                    final result = await showDialog<Map<String, dynamic>>(
+                      context: context,
+                      builder: (context) => const CreateBorrowingDialog(),
+                    );
+
+                    if (!mounted) return;
+
+                    if (result != null) {
+                      setState(() {
+                        borrowings.insert(0, result);
+                      });
+
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        const SnackBar(
+                          content: Text('Tạo phiếu mượn thành công!'),
+                          backgroundColor: Colors.green,
+                        ),
+                      );
+                    }
+                  },
                   icon: const Icon(Icons.add_shopping_cart),
                   label: const Text('Tạo phiếu mượn'),
                 ),
@@ -88,9 +113,15 @@ class BorrowingPage extends StatelessWidget {
                           padding: const EdgeInsets.all(12),
                           decoration: BoxDecoration(
                             color: statusColor.withValues(alpha: 0.12),
-                            borderRadius: BorderRadius.circular(AppConstants.radiusMedium),
+                            borderRadius: BorderRadius.circular(
+                              AppConstants.radiusMedium,
+                            ),
                           ),
-                          child: Icon(Icons.assignment_outlined, color: statusColor, size: 28),
+                          child: Icon(
+                            Icons.assignment_outlined,
+                            color: statusColor,
+                            size: 28,
+                          ),
                         ),
                         const SizedBox(width: 16),
                         Expanded(
@@ -121,15 +152,79 @@ class BorrowingPage extends StatelessWidget {
                             ],
                           ),
                         ),
-                        Chip(
-                          label: Text(
-                            b['status'] as String,
-                            style: TextStyle(
-                              color: statusColor,
-                              fontWeight: FontWeight.w600,
+
+                        Column(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Chip(
+                              label: Text(
+                                b['status'] as String,
+                                style: TextStyle(
+                                  color: statusColor,
+                                  fontWeight: FontWeight.w600,
+                                ),
+                              ),
+                              backgroundColor: statusColor.withValues(
+                                alpha: 0.1,
+                              ),
                             ),
-                          ),
-                          backgroundColor: statusColor.withValues(alpha: 0.1),
+                            if (b['status'] != 'Đã trả')
+                              TextButton.icon(
+                                onPressed: () {
+                                  setState(() {
+                                    b['status'] = 'Đã trả';
+                                    b['daysLeft'] = 'Đã hoàn tất';
+                                    b['statusColor'] = AppColors.success;
+                                  });
+
+                                  ScaffoldMessenger.of(context).showSnackBar(
+                                    const SnackBar(
+                                      content: Text('Trả tài liệu thành công!'),
+                                    ),
+                                  );
+                                },
+                                icon: const Icon(Icons.assignment_turned_in),
+                                label: const Text('Trả tài liệu'),
+                              ),
+
+                            if (b['status'] != 'Đã trả')
+                              TextButton.icon(
+                                onPressed: () {
+                                  final parts = (b['dueDate'] as String).split(
+                                    '/',
+                                  );
+                                  final oldDate = DateTime(
+                                    int.parse(parts[2]),
+                                    int.parse(parts[1]),
+                                    int.parse(parts[0]),
+                                  );
+
+                                  final newDate = oldDate.add(
+                                    const Duration(days: 7),
+                                  );
+
+                                  setState(() {
+                                    b['dueDate'] =
+                                        '${newDate.day.toString().padLeft(2, '0')}/'
+                                        '${newDate.month.toString().padLeft(2, '0')}/'
+                                        '${newDate.year}';
+                                    b['daysLeft'] = 'Đã gia hạn thêm 7 ngày';
+                                    b['status'] = 'Đang mượn';
+                                    b['statusColor'] = AppColors.info;
+                                  });
+
+                                  ScaffoldMessenger.of(context).showSnackBar(
+                                    const SnackBar(
+                                      content: Text(
+                                        'Gia hạn tài liệu thành công!',
+                                      ),
+                                    ),
+                                  );
+                                },
+                                icon: const Icon(Icons.update),
+                                label: const Text('Gia hạn'),
+                              ),
+                          ],
                         ),
                       ],
                     ),
