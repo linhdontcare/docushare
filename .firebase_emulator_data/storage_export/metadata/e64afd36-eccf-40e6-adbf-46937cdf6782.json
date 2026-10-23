@@ -1,0 +1,21 @@
+{
+  "name": "users/kLgMfPhnpvhBhaLEtAzgbHCFsZ52/documents/1da0f677-b1ba-4e4e-bc70-ee7744395db2/TH2_HTC_Nhom2 (1).pdf",
+  "bucket": "edu-vault-ldcedition.firebasestorage.app",
+  "metageneration": 1,
+  "generation": 1792460039162,
+  "contentType": "application/pdf",
+  "storageClass": "STANDARD",
+  "contentDisposition": "inline",
+  "downloadTokens": [
+    "2988fa95-6c39-4c3d-8625-58eb28d311ff"
+  ],
+  "etag": "kmZbfTBEq80whW+/riZcz1UiEiE",
+  "customMetadata": {
+    "ownerId": "kLgMfPhnpvhBhaLEtAzgbHCFsZ52"
+  },
+  "timeCreated": "2026-10-20T01:33:59.162Z",
+  "updated": "2026-10-20T01:33:59.162Z",
+  "size": 1323614,
+  "md5Hash": "g2+t5t526nH0NAO0OJHAhw==",
+  "crc32c": "303442343"
+}

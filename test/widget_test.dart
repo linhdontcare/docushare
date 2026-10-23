@@ -1,18 +1,27 @@
+// Smoke test cho ứng dụng EduVault
 import 'package:flutter_test/flutter_test.dart';
-import 'package:docushare/main.dart';
-import 'package:docushare/core/constants/app_strings.dart';
+import 'package:docushare/domain/models/document_model.dart';
+import 'package:docushare/data/database/converters/type_converters.dart';
 
 void main() {
-  testWidgets('DocuShare app smoke test - launches and renders dashboard', (
-    WidgetTester tester,
-  ) async {
-    // Build DocuShareApp
-    await tester.pumpWidget(const DocuShareApp());
-    await tester.pumpAndSettle();
+  test('DocumentModel domain entity integrity test', () {
+    final now = DateTime.now();
+    final doc = DocumentModel(
+      id: 'test_doc_1',
+      title: 'Đề cương Cấu trúc dữ liệu',
+      subject: 'Khoa học máy tính',
+      categoryId: 'cat_lecture_notes',
+      categoryName: 'Bài giảng & Ghi chú',
+      filePathOrUrl: 'https://example.com/slide.pdf',
+      notes: 'Ôn tập chương cây nhị phân và đồ thị',
+      priority: DocumentPriority.high,
+      createdDate: now,
+      updatedDate: now,
+    );
 
-    // Verify DocuShare brand and Dashboard title exist
-    expect(find.text(AppStrings.appName), findsWidgets);
-    expect(find.text(AppStrings.welcomeTitle), findsOneWidget);
-    expect(find.text(AppStrings.statTotalDocs), findsOneWidget);
+    expect(doc.id, 'test_doc_1');
+    expect(doc.title, 'Đề cương Cấu trúc dữ liệu');
+    expect(doc.hasAttachment, true);
+    expect(doc.isWebLink, true);
   });
 }

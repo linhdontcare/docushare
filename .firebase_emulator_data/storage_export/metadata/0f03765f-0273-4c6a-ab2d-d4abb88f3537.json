@@ -1,0 +1,21 @@
+{
+  "name": "users/kLgMfPhnpvhBhaLEtAzgbHCFsZ52/documents/1a1fa14f-9bf3-455d-9d81-4035ae5ed45e/HQTCSDL_FINAL_G2.pdf",
+  "bucket": "edu-vault-ldcedition.firebasestorage.app",
+  "metageneration": 1,
+  "generation": 1792460190953,
+  "contentType": "application/pdf",
+  "storageClass": "STANDARD",
+  "contentDisposition": "inline",
+  "downloadTokens": [
+    "bde05939-9f85-41c1-85f4-bc04412f8eb5"
+  ],
+  "etag": "++CqVqYl1Ik2sOO4wL7Qubj8oB4",
+  "customMetadata": {
+    "ownerId": "kLgMfPhnpvhBhaLEtAzgbHCFsZ52"
+  },
+  "timeCreated": "2026-10-20T01:36:30.953Z",
+  "updated": "2026-10-20T01:36:30.953Z",
+  "size": 2697375,
+  "md5Hash": "7CPTT4KXdbcuRP3breC+KA==",
+  "crc32c": "584913950"
+}

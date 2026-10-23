@@ -1,0 +1,28 @@
+rules_version = '2';
+
+// Cấu hình quy tắc bảo mật Firebase Storage cho EduVault
+// Áp dụng bảo mật nghiêm ngặt cho cả Production Cloud Storage và Development Storage Emulator
+service firebase.storage {
+  match /b/{bucket}/o {
+    
+    // Mỗi người dùng có thư mục: users/{userId}/documents/{documentId}/{fileName}
+    match /users/{userId}/{allPaths=**} {
+      // Cho phép đọc đối với người dùng đã xác thực (bao gồm cả chủ sở hữu và người được chia sẻ quyền xem/sửa)
+      allow read: if request.auth != null;
+      
+      // Cho phép tải lên và cập nhật tệp tối đa 20 MB (yêu cầu request.resource - chỉ chủ sở hữu)
+      allow create, update: if request.auth != null
+                            && request.auth.uid == userId
+                            && request.resource.size < 20 * 1024 * 1024;
+
+      // Cho phép xóa tệp khi người dùng đã xác thực và chính là chủ sở hữu
+      // Lưu ý: Thao tác delete() trong Storage Rules có request.resource == null
+      allow delete: if request.auth != null && request.auth.uid == userId;
+    }
+
+    // Chặn hoàn toàn mọi truy cập đọc/ghi trái phép bên ngoài thư mục quy định
+    match /{allPaths=**} {
+      allow read, write: if false;
+    }
+  }
+}

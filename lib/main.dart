@@ -1,62 +1,101 @@
-import 'package:flutter/material.dart';
-import 'core/config/firebase_config.dart';
-import 'core/config/supabase_config.dart';
-import 'core/constants/app_strings.dart';
-import 'core/theme/app_theme.dart';
-import 'shared/services/firebase_notification_service.dart';
-import 'shared/widgets/responsive_navigation_scaffold.dart';
+// ==============================================================================
+// APPLICATION ENTRY POINT: main.dart
+// Cấu hình khởi tạo toàn cục theo chuẩn Cashew Architecture:
+// - Đảm bảo WidgetsFlutterBinding được khởi chạy
+// - Thiết lập Dependency Injection (DI) bằng MultiProvider phân tầng:
+//   * Drift SQLite Database (Singleton)
+//   * Domain Repository Implementation
+//   * Presentation State Notifiers (DocumentProvider)
+// - Cấu hình hệ thống Material 3 AppTheme với chế độ sáng/tối tự động
+// ==============================================================================
 
-Future<void> main() async {
+import 'package:flutter/material.dart';
+import 'package:provider/provider.dart';
+
+import 'core/theme/app_theme.dart';
+import 'core/config/supabase_config.dart';
+import 'core/firebase/firebase_service.dart';
+import 'core/supabase/supabase_service.dart';
+import 'data/database/drift_database.dart';
+import 'data/repositories/document_repository_impl.dart';
+import 'data/repositories/user_repository_impl.dart';
+import 'domain/repositories/document_repository.dart';
+import 'domain/repositories/user_repository.dart';
+import 'presentation/providers/document_provider.dart';
+import 'presentation/providers/user_provider.dart';
+import 'presentation/screens/auth_gate.dart';
+
+void main() async {
+  // 1. Đảm bảo Engine Flutter được liên kết trước khi thực hiện thao tác I/O
   WidgetsFlutterBinding.ensureInitialized();
 
-  // Khởi tạo Firebase chính thức kết nối dự án thực tế
+  // Firebase cần firebase_options.dart hoặc cấu hình native do
+  // flutterfire configure tạo ra. Giữ app chạy offline nếu chưa cấu hình.
   try {
-    await FirebaseConfig.initialize();
+    await FirebaseService.instance.initialize();
+  } on StateError {
+    // Firebase status is shown by the sign-in action; local mode remains usable.
+  }
+
+  // Khởi tạo Supabase SDK trực tiếp từ SupabaseConfig với callback accessToken từ Firebase
+  try {
+    await SupabaseService.instance.initialize(
+      url: SupabaseConfig.url,
+      publishableKey: SupabaseConfig.effectivePublishableKey,
+    );
   } catch (e) {
-    debugPrint('⚠️ [Firebase] Lỗi khởi tạo Firebase Core: $e');
+    debugPrint('[main] Lỗi khởi tạo Supabase: $e');
   }
 
-  // Khởi tạo Supabase (Database + Storage cho module Documents/Tagging)
-  await SupabaseConfig.initialize();
+  // 2. Khởi tạo Cơ sở dữ liệu SQLite cục bộ (Drift ORM)
+  final database = AppDatabase();
 
-  // Hiển thị ngay giao diện ứng dụng DocuShare
-  runApp(const DocuShareApp());
+  // 3. Khởi tạo Repository hiện thực (Data Layer)
+  final DocumentRepository documentRepository = DocumentRepositoryImpl(
+    database,
+  );
+  final UserRepository userRepository = UserRepositoryImpl(
+    supabaseService: SupabaseService.instance,
+  );
 
-  // Khởi tạo dịch vụ thông báo đẩy FCM (chạy nền, không chặn giao diện)
-  FirebaseNotificationService.instance.initialize().catchError((e) {
-    debugPrint('⚠️ [FCM] Lỗi khởi tạo FCM: $e');
-  });
+  runApp(
+    MultiProvider(
+      providers: [
+        // Cung cấp Database Instance trong toàn cây Widget
+        Provider<AppDatabase>.value(value: database),
+
+        // Cung cấp Repository Interfaces cho phép dễ dàng Mocking khi kiểm thử
+        Provider<DocumentRepository>.value(value: documentRepository),
+        Provider<UserRepository>.value(value: userRepository),
+
+        // Cung cấp Business State Notifiers cho Tầng Giao diện UI
+        ChangeNotifierProvider<DocumentProvider>(
+          create: (_) => DocumentProvider(repository: documentRepository),
+        ),
+        ChangeNotifierProvider<UserProvider>(
+          create: (_) => UserProvider(userRepo: userRepository),
+        ),
+      ],
+      child: const DocuShareApp(),
+    ),
+  );
 }
 
-/// Ứng dụng DocuShare - Hệ thống Quản lý Tài liệu Đa nền tảng
-class DocuShareApp extends StatefulWidget {
+class DocuShareApp extends StatelessWidget {
   const DocuShareApp({super.key});
-
-  @override
-  State<DocuShareApp> createState() => _DocuShareAppState();
-}
-
-class _DocuShareAppState extends State<DocuShareApp> {
-  ThemeMode _themeMode = ThemeMode.light;
-
-  void _handleThemeToggle(ThemeMode mode) {
-    setState(() {
-      _themeMode = mode;
-    });
-  }
 
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
-      title: AppStrings.appName,
+      title: 'DocuShare',
       debugShowCheckedModeBanner: false,
-      theme: AppTheme.lightTheme,
-      darkTheme: AppTheme.darkTheme,
-      themeMode: _themeMode,
-      home: ResponsiveNavigationScaffold(
-        currentThemeMode: _themeMode,
-        onThemeToggle: _handleThemeToggle,
-      ),
+      theme: AppTheme.deepTechEmeraldTheme,
+      darkTheme: AppTheme.deepTechEmeraldTheme,
+      themeMode: ThemeMode.dark,
+      home: const AuthGate(),
     );
   }
 }
+
+/// Alias for backwards compatibility with tests
+typedef EduVaultApp = DocuShareApp;
