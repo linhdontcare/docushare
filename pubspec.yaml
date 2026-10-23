@@ -40,6 +40,13 @@ dependencies:
   cloud_firestore: ^7.0.0
   google_sign_in: ^7.2.0
 
+  # Supabase: Database (PostgreSQL) + Storage cho module Documents/Tagging
+  supabase_flutter: ^2.8.3
+
+  # Chọn file khi tải lên tài liệu + mở file đính kèm
+  file_picker: ^8.1.7
+  url_launcher: ^6.3.1
+
 dev_dependencies:
   flutter_test:
     sdk: flutter

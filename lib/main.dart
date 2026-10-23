@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'core/config/firebase_config.dart';
+import 'core/config/supabase_config.dart';
 import 'core/constants/app_strings.dart';
 import 'core/theme/app_theme.dart';
 import 'shared/services/firebase_notification_service.dart';
@@ -14,6 +15,9 @@ Future<void> main() async {
   } catch (e) {
     debugPrint('⚠️ [Firebase] Lỗi khởi tạo Firebase Core: $e');
   }
+
+  // Khởi tạo Supabase (Database + Storage cho module Documents/Tagging)
+  await SupabaseConfig.initialize();
 
   // Hiển thị ngay giao diện ứng dụng DocuShare
   runApp(const DocuShareApp());
