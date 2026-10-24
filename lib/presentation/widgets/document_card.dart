@@ -214,6 +214,10 @@ class _DocumentCardState extends State<DocumentCard> {
                                   widget.onEdit();
                                 } else if (value == 'delete') {
                                   widget.onDelete();
+                                } else if (value == 'filter_location' && document.hasPhysicalLocation) {
+                                  context.read<DocumentProvider>().setLocationFilter(
+                                        document.locationName ?? document.displayLocationName,
+                                      );
                                 } else if (value == 'location' && document.hasPhysicalLocation) {
                                   showLocationDetailDialog(
                                     context,
@@ -235,7 +239,17 @@ class _DocumentCardState extends State<DocumentCard> {
                                 }
                               },
                               itemBuilder: (context) => [
-                                if (document.hasPhysicalLocation)
+                                if (document.hasPhysicalLocation) ...[
+                                  const PopupMenuItem(
+                                    value: 'filter_location',
+                                    child: Row(
+                                      children: [
+                                        Icon(Icons.filter_alt_rounded, size: 18, color: Colors.amber),
+                                        SizedBox(width: 8),
+                                        Text('Lọc tài liệu tại vị trí này', style: TextStyle(color: AppTheme.textPrimary)),
+                                      ],
+                                    ),
+                                  ),
                                   const PopupMenuItem(
                                     value: 'location',
                                     child: Row(
@@ -246,6 +260,7 @@ class _DocumentCardState extends State<DocumentCard> {
                                       ],
                                     ),
                                   ),
+                                ],
                                 if (!document.isOwner && (document.isBorrowable || document.isAvailableForBorrow))
                                   const PopupMenuItem(
                                     value: 'borrow',
@@ -366,51 +381,82 @@ class _DocumentCardState extends State<DocumentCard> {
                       // Vị trí vật lý lưu trữ (nếu có)
                       if (document.hasPhysicalLocation) ...[
                         const SizedBox(height: 6),
-                        InkWell(
-                          onTap: () => showLocationDetailDialog(
-                            context,
-                            title: document.title,
-                            physicalLocation: document.formattedLocationAddress ?? document.displayLocationName,
-                            locationName: document.locationName,
-                            building: document.building,
-                            floor: document.floor,
-                            shelf: document.shelf,
-                            latitude: document.latitude,
-                            longitude: document.longitude,
-                            notes: document.locationNotes,
-                          ),
-                          borderRadius: BorderRadius.circular(6),
-                          child: Container(
-                            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-                            decoration: BoxDecoration(
-                              color: Colors.amber.withValues(alpha: 0.12),
+                        Builder(
+                          builder: (context) {
+                            final selectedLoc = context.watch<DocumentProvider>().selectedLocation;
+                            final isLocSelected = selectedLoc != null &&
+                                (selectedLoc.toLowerCase() == document.displayLocationName.toLowerCase() ||
+                                    (document.locationName != null &&
+                                        selectedLoc.toLowerCase() == document.locationName!.toLowerCase()));
+
+                            return InkWell(
+                              onTap: () {
+                                context.read<DocumentProvider>().toggleLocationFilter(
+                                      document.locationName ?? document.displayLocationName,
+                                    );
+                              },
+                              onLongPress: () => showLocationDetailDialog(
+                                context,
+                                title: document.title,
+                                physicalLocation: document.formattedLocationAddress ?? document.displayLocationName,
+                                locationName: document.locationName,
+                                building: document.building,
+                                floor: document.floor,
+                                shelf: document.shelf,
+                                latitude: document.latitude,
+                                longitude: document.longitude,
+                                notes: document.locationNotes,
+                              ),
                               borderRadius: BorderRadius.circular(6),
-                              border: Border.all(color: Colors.amber.withValues(alpha: 0.35)),
-                            ),
-                            child: Row(
-                              mainAxisSize: MainAxisSize.min,
-                              children: [
-                                const Icon(Icons.place_rounded, size: 13, color: Colors.amber),
-                                const SizedBox(width: 4),
-                                Flexible(
-                                  child: Text(
-                                    document.displayLocationName,
-                                    style: const TextStyle(
-                                      fontSize: 11.5,
-                                      color: Colors.amber,
-                                      fontWeight: FontWeight.w600,
-                                    ),
-                                    maxLines: 1,
-                                    overflow: TextOverflow.ellipsis,
+                              child: AnimatedContainer(
+                                duration: const Duration(milliseconds: 150),
+                                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                                decoration: BoxDecoration(
+                                  color: isLocSelected
+                                      ? Colors.amber
+                                      : Colors.amber.withValues(alpha: 0.12),
+                                  borderRadius: BorderRadius.circular(6),
+                                  border: Border.all(
+                                    color: isLocSelected
+                                        ? Colors.amber
+                                        : Colors.amber.withValues(alpha: 0.4),
+                                    width: isLocSelected ? 1.5 : 1,
                                   ),
                                 ),
-                                if (document.hasCoordinates) ...[
-                                  const SizedBox(width: 4),
-                                  const Icon(Icons.navigation_rounded, size: 11, color: Colors.amber),
-                                ],
-                              ],
-                            ),
-                          ),
+                                child: Row(
+                                  mainAxisSize: MainAxisSize.min,
+                                  children: [
+                                    Icon(
+                                      isLocSelected ? Icons.check_circle_rounded : Icons.place_rounded,
+                                      size: 13,
+                                      color: isLocSelected ? Colors.black : Colors.amber,
+                                    ),
+                                    const SizedBox(width: 4),
+                                    Flexible(
+                                      child: Text(
+                                        document.displayLocationName,
+                                        style: TextStyle(
+                                          fontSize: 11.5,
+                                          color: isLocSelected ? Colors.black : Colors.amber,
+                                          fontWeight: isLocSelected ? FontWeight.bold : FontWeight.w600,
+                                        ),
+                                        maxLines: 1,
+                                        overflow: TextOverflow.ellipsis,
+                                      ),
+                                    ),
+                                    if (document.hasCoordinates) ...[
+                                      const SizedBox(width: 4),
+                                      Icon(
+                                        Icons.navigation_rounded,
+                                        size: 11,
+                                        color: isLocSelected ? Colors.black : Colors.amber,
+                                      ),
+                                    ],
+                                  ],
+                                ),
+                              ),
+                            );
+                          },
                         ),
                       ],
 
@@ -418,31 +464,50 @@ class _DocumentCardState extends State<DocumentCard> {
                       if (document.tags.isNotEmpty) ...[
                         const SizedBox(height: 8),
                         Wrap(
-                          spacing: 4,
+                          spacing: 5,
                           runSpacing: 4,
                           children: document.tags.map((tag) {
+                            final isSelectedTag = context.watch<DocumentProvider>().selectedTags.any(
+                                  (t) => t.toLowerCase() == tag.toLowerCase(),
+                                );
                             return InkWell(
                               onTap: () {
-                                context.read<DocumentProvider>().setTagFilter(tag);
+                                context.read<DocumentProvider>().toggleTagFilter(tag);
                               },
-                              borderRadius: BorderRadius.circular(4),
-                              child: Container(
-                                padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                              borderRadius: BorderRadius.circular(6),
+                              child: AnimatedContainer(
+                                duration: const Duration(milliseconds: 150),
+                                padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2.5),
                                 decoration: BoxDecoration(
-                                  color: AppTheme.primaryColor.withValues(alpha: 0.12),
-                                  borderRadius: BorderRadius.circular(4),
+                                  color: isSelectedTag
+                                      ? AppTheme.primaryColor
+                                      : AppTheme.primaryColor.withValues(alpha: 0.12),
+                                  borderRadius: BorderRadius.circular(6),
                                   border: Border.all(
-                                    color: AppTheme.primaryColor.withValues(alpha: 0.3),
-                                    width: 0.8,
+                                    color: isSelectedTag
+                                        ? AppTheme.primaryColor
+                                        : AppTheme.primaryColor.withValues(alpha: 0.35),
+                                    width: 1,
                                   ),
                                 ),
-                                child: Text(
-                                  '#$tag',
-                                  style: const TextStyle(
-                                    fontSize: 10.5,
-                                    color: AppTheme.primaryColor,
-                                    fontWeight: FontWeight.w500,
-                                  ),
+                                child: Row(
+                                  mainAxisSize: MainAxisSize.min,
+                                  children: [
+                                    Icon(
+                                      Icons.tag_rounded,
+                                      size: 11,
+                                      color: isSelectedTag ? Colors.white : AppTheme.primaryColor,
+                                    ),
+                                    const SizedBox(width: 3),
+                                    Text(
+                                      tag,
+                                      style: TextStyle(
+                                        fontSize: 11,
+                                        color: isSelectedTag ? Colors.white : AppTheme.primaryColor,
+                                        fontWeight: isSelectedTag ? FontWeight.bold : FontWeight.w600,
+                                      ),
+                                    ),
+                                  ],
                                 ),
                               ),
                             );

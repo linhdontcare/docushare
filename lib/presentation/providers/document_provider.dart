@@ -17,6 +17,7 @@ import '../../core/supabase/supabase_service.dart';
 import '../../domain/models/borrow_request_model.dart';
 import '../../domain/models/category_model.dart';
 import '../../domain/models/document_model.dart';
+import '../../domain/models/location_model.dart';
 import '../../domain/models/supabase_document_model.dart';
 import '../../domain/repositories/document_repository.dart';
 
@@ -29,7 +30,9 @@ class DocumentProvider extends ChangeNotifier {
   List<CategoryModel> _categories = CategoryModel.defaultCategories;
   String _searchQuery = '';
   String? _selectedCategoryId = 'all';
-  String? _selectedTag;
+  final Set<String> _selectedTags = {};
+  bool _matchAllTags = false; // false = OR (khớp bất kỳ), true = AND (khớp tất cả)
+  String? _selectedLocation; // Bộ lọc theo vị trí lưu trữ (Location Filter)
   bool _isLoading = false;
   bool _isLoadingShared = false;
   String? _errorMessage;
@@ -73,7 +76,10 @@ class DocumentProvider extends ChangeNotifier {
       _categories.isNotEmpty ? _categories : CategoryModel.defaultCategories;
   String get searchQuery => _searchQuery;
   String? get selectedCategoryId => _selectedCategoryId;
-  String? get selectedTag => _selectedTag;
+  Set<String> get selectedTags => Set.unmodifiable(_selectedTags);
+  String? get selectedTag => _selectedTags.isEmpty ? null : _selectedTags.first;
+  bool get matchAllTags => _matchAllTags;
+  String? get selectedLocation => _selectedLocation;
   bool get isLoading => _isLoading;
   bool get isLoadingShared => _isLoadingShared;
   String? get errorMessage => _errorMessage;
@@ -109,6 +115,43 @@ class DocumentProvider extends ChangeNotifier {
     return sorted;
   }
 
+  /// Danh sách tất cả các vị trí lưu trữ vật lý duy nhất trong hệ thống
+  List<String> get allLocations {
+    final locations = <String>{};
+    // 1. Lấy từ tài liệu thực tế của người dùng, tài liệu chia sẻ và khám phá
+    for (final doc in [..._documents, ..._sharedDocuments, ..._discoverableDocuments]) {
+      final loc = doc.locationName?.trim();
+      if (loc != null && loc.isNotEmpty) {
+        locations.add(loc);
+      } else if (doc.building != null && doc.building!.trim().isNotEmpty) {
+        locations.add(doc.building!.trim());
+      } else if (doc.hasPhysicalLocation && doc.displayLocationName != 'Chưa thiết lập vị trí') {
+        locations.add(doc.displayLocationName);
+      }
+    }
+
+    // 2. Bổ sung các địa điểm mẫu phổ biến (Thư viện Tạ Quang Bửu, Thư viện Trung tâm ĐHQG, Lab AI,...)
+    for (final preset in PhysicalLocationModel.presetLocations) {
+      locations.add(preset.name);
+    }
+
+    final sorted = locations.toList();
+    sorted.sort((a, b) => a.toLowerCase().compareTo(b.toLowerCase()));
+    return sorted;
+  }
+
+  /// Đếm số lượng tài liệu đang lưu trữ tại một vị trí cụ thể
+  int countDocumentsAtLocation(String locationName) {
+    final locQuery = locationName.trim().toLowerCase();
+    final allDocs = [..._documents, ..._sharedDocuments, ..._discoverableDocuments];
+    return allDocs.where((doc) {
+      return (doc.locationName != null && doc.locationName!.toLowerCase().contains(locQuery)) ||
+          (doc.physicalLocation != null && doc.physicalLocation!.toLowerCase().contains(locQuery)) ||
+          (doc.building != null && doc.building!.toLowerCase().contains(locQuery)) ||
+          (doc.displayLocationName.toLowerCase().contains(locQuery));
+    }).map((d) => d.id).toSet().length;
+  }
+
   /// Danh sách tài liệu được Recommendation Engine gợi ý thông minh
   List<DocumentRecommendation> get recommendedDocuments {
     return _recommendationService.getRecommendations(
@@ -118,7 +161,7 @@ class DocumentProvider extends ChangeNotifier {
     );
   }
 
-  /// Danh sách tài liệu của người dùng được lọc theo thời gian thực (Title/Subject, Category, Tag)
+  /// Danh sách tài liệu của người dùng được lọc theo thời gian thực (Category, Tags, Location, Search)
   List<DocumentModel> get filteredDocuments {
     return _documents.where((doc) {
       // 1. Lọc theo danh mục
@@ -129,25 +172,47 @@ class DocumentProvider extends ChangeNotifier {
 
       if (!matchesCategory) return false;
 
-      // 2. Lọc theo Tag
-      if (_selectedTag != null && _selectedTag!.isNotEmpty) {
-        final normSelected = _selectedTag!.replaceAll('#', '').trim().toLowerCase();
-        final hasTag = doc.tags.any((t) => t.replaceAll('#', '').trim().toLowerCase() == normSelected);
-        if (!hasTag) return false;
+      // 2. Lọc theo nhiều Tag (Hashtags)
+      if (_selectedTags.isNotEmpty) {
+        final docNormTags = doc.tags.map((t) => t.replaceAll('#', '').trim().toLowerCase()).toSet();
+        if (_matchAllTags) {
+          final matchesAll = _selectedTags.every((st) {
+            final norm = st.replaceAll('#', '').trim().toLowerCase();
+            return docNormTags.contains(norm);
+          });
+          if (!matchesAll) return false;
+        } else {
+          final matchesAny = _selectedTags.any((st) {
+            final norm = st.replaceAll('#', '').trim().toLowerCase();
+            return docNormTags.contains(norm);
+          });
+          if (!matchesAny) return false;
+        }
       }
 
-      // 3. Lọc theo từ khóa tìm kiếm (khớp Tiêu đề, Môn học, hoặc Tag)
+      // 3. Lọc theo Vị trí lưu trữ vật lý (Location Filter)
+      if (_selectedLocation != null && _selectedLocation!.trim().isNotEmpty) {
+        final locQuery = _selectedLocation!.trim().toLowerCase();
+        final matchesLocation = (doc.locationName != null && doc.locationName!.toLowerCase().contains(locQuery)) ||
+            (doc.physicalLocation != null && doc.physicalLocation!.toLowerCase().contains(locQuery)) ||
+            (doc.building != null && doc.building!.toLowerCase().contains(locQuery)) ||
+            (doc.displayLocationName.toLowerCase().contains(locQuery));
+        if (!matchesLocation) return false;
+      }
+
+      // 4. Lọc theo từ khóa tìm kiếm (khớp Tiêu đề, Môn học, Tag hoặc Vị trí)
       if (_searchQuery.trim().isEmpty) return true;
       final queryLower = _searchQuery.trim().toLowerCase();
       final titleMatch = doc.title.toLowerCase().contains(queryLower);
       final subjectMatch = doc.subject.toLowerCase().contains(queryLower);
       final tagMatch = doc.tags.any((t) => t.toLowerCase().contains(queryLower));
+      final locationMatch = doc.displayLocationName.toLowerCase().contains(queryLower);
 
-      return titleMatch || subjectMatch || tagMatch;
+      return titleMatch || subjectMatch || tagMatch || locationMatch;
     }).toList();
   }
 
-  /// Danh sách tài liệu ĐƯỢC CHIA SẺ được lọc theo thời gian thực (Title/Subject, Category, Tag)
+  /// Danh sách tài liệu ĐƯỢC CHIA SẺ được lọc theo thời gian thực (Category, Tags, Location, Search)
   List<DocumentModel> get filteredSharedDocuments {
     return _sharedDocuments.where((doc) {
       // 1. Lọc theo danh mục
@@ -158,25 +223,47 @@ class DocumentProvider extends ChangeNotifier {
 
       if (!matchesCategory) return false;
 
-      // 2. Lọc theo Tag
-      if (_selectedTag != null && _selectedTag!.isNotEmpty) {
-        final normSelected = _selectedTag!.replaceAll('#', '').trim().toLowerCase();
-        final hasTag = doc.tags.any((t) => t.replaceAll('#', '').trim().toLowerCase() == normSelected);
-        if (!hasTag) return false;
+      // 2. Lọc theo nhiều Tag (Hashtags)
+      if (_selectedTags.isNotEmpty) {
+        final docNormTags = doc.tags.map((t) => t.replaceAll('#', '').trim().toLowerCase()).toSet();
+        if (_matchAllTags) {
+          final matchesAll = _selectedTags.every((st) {
+            final norm = st.replaceAll('#', '').trim().toLowerCase();
+            return docNormTags.contains(norm);
+          });
+          if (!matchesAll) return false;
+        } else {
+          final matchesAny = _selectedTags.any((st) {
+            final norm = st.replaceAll('#', '').trim().toLowerCase();
+            return docNormTags.contains(norm);
+          });
+          if (!matchesAny) return false;
+        }
       }
 
-      // 3. Lọc theo từ khóa tìm kiếm
+      // 3. Lọc theo Vị trí lưu trữ vật lý (Location Filter)
+      if (_selectedLocation != null && _selectedLocation!.trim().isNotEmpty) {
+        final locQuery = _selectedLocation!.trim().toLowerCase();
+        final matchesLocation = (doc.locationName != null && doc.locationName!.toLowerCase().contains(locQuery)) ||
+            (doc.physicalLocation != null && doc.physicalLocation!.toLowerCase().contains(locQuery)) ||
+            (doc.building != null && doc.building!.toLowerCase().contains(locQuery)) ||
+            (doc.displayLocationName.toLowerCase().contains(locQuery));
+        if (!matchesLocation) return false;
+      }
+
+      // 4. Lọc theo từ khóa tìm kiếm
       if (_searchQuery.trim().isEmpty) return true;
       final queryLower = _searchQuery.trim().toLowerCase();
       final titleMatch = doc.title.toLowerCase().contains(queryLower);
       final subjectMatch = doc.subject.toLowerCase().contains(queryLower);
       final tagMatch = doc.tags.any((t) => t.toLowerCase().contains(queryLower));
+      final locationMatch = doc.displayLocationName.toLowerCase().contains(queryLower);
 
-      return titleMatch || subjectMatch || tagMatch;
+      return titleMatch || subjectMatch || tagMatch || locationMatch;
     }).toList();
   }
 
-  /// Danh sách tài liệu KHÁM PHÁ CÔNG KHAI được lọc theo thời gian thực
+  /// Danh sách tài liệu KHÁM PHÁ CÔNG KHAI được lọc theo thời gian thực (Category, Tags, Location, Search)
   List<DocumentModel> get filteredDiscoverableDocuments {
     return _discoverableDocuments.where((doc) {
       final matchesCategory =
@@ -186,19 +273,43 @@ class DocumentProvider extends ChangeNotifier {
 
       if (!matchesCategory) return false;
 
-      if (_selectedTag != null && _selectedTag!.isNotEmpty) {
-        final normSelected = _selectedTag!.replaceAll('#', '').trim().toLowerCase();
-        final hasTag = doc.tags.any((t) => t.replaceAll('#', '').trim().toLowerCase() == normSelected);
-        if (!hasTag) return false;
+      // 2. Lọc theo nhiều Tag (Hashtags)
+      if (_selectedTags.isNotEmpty) {
+        final docNormTags = doc.tags.map((t) => t.replaceAll('#', '').trim().toLowerCase()).toSet();
+        if (_matchAllTags) {
+          final matchesAll = _selectedTags.every((st) {
+            final norm = st.replaceAll('#', '').trim().toLowerCase();
+            return docNormTags.contains(norm);
+          });
+          if (!matchesAll) return false;
+        } else {
+          final matchesAny = _selectedTags.any((st) {
+            final norm = st.replaceAll('#', '').trim().toLowerCase();
+            return docNormTags.contains(norm);
+          });
+          if (!matchesAny) return false;
+        }
       }
 
+      // 3. Lọc theo Vị trí lưu trữ vật lý (Location Filter)
+      if (_selectedLocation != null && _selectedLocation!.trim().isNotEmpty) {
+        final locQuery = _selectedLocation!.trim().toLowerCase();
+        final matchesLocation = (doc.locationName != null && doc.locationName!.toLowerCase().contains(locQuery)) ||
+            (doc.physicalLocation != null && doc.physicalLocation!.toLowerCase().contains(locQuery)) ||
+            (doc.building != null && doc.building!.toLowerCase().contains(locQuery)) ||
+            (doc.displayLocationName.toLowerCase().contains(locQuery));
+        if (!matchesLocation) return false;
+      }
+
+      // 4. Lọc theo từ khóa tìm kiếm
       if (_searchQuery.trim().isEmpty) return true;
       final queryLower = _searchQuery.trim().toLowerCase();
       final titleMatch = doc.title.toLowerCase().contains(queryLower);
       final subjectMatch = doc.subject.toLowerCase().contains(queryLower);
       final tagMatch = doc.tags.any((t) => t.toLowerCase().contains(queryLower));
+      final locationMatch = doc.displayLocationName.toLowerCase().contains(queryLower);
 
-      return titleMatch || subjectMatch || tagMatch;
+      return titleMatch || subjectMatch || tagMatch || locationMatch;
     }).toList();
   }
 
@@ -234,6 +345,8 @@ class DocumentProvider extends ChangeNotifier {
     _incomingBorrowRequests = [];
     _myBorrowRequests = [];
     _userPreferredTags = [];
+    _selectedTags.clear();
+    _selectedLocation = null;
     _errorMessage = null;
     _isLoading = false;
     _isLoadingShared = false;
@@ -375,14 +488,91 @@ class DocumentProvider extends ChangeNotifier {
     }
   }
 
-  /// Cập nhật bộ lọc Tag (nhấn lại vào tag đang chọn để hủy lọc)
-  void setTagFilter(String? tag) {
-    if (_selectedTag == tag) {
-      _selectedTag = null; // Toggle tắt bộ lọc
+  /// Bật/tắt chế độ khớp tất cả tag (AND) hoặc khớp bất kỳ (OR)
+  void setMatchAllTags(bool matchAll) {
+    if (_matchAllTags != matchAll) {
+      _matchAllTags = matchAll;
+      notifyListeners();
+    }
+  }
+
+  /// Bật / Tắt một thẻ Tag cụ thể trong danh sách lọc nhiều tag
+  void toggleTagFilter(String tag) {
+    final clean = tag.replaceAll('#', '').trim();
+    if (clean.isEmpty) return;
+    final existing = _selectedTags.firstWhere(
+      (t) => t.toLowerCase() == clean.toLowerCase(),
+      orElse: () => '',
+    );
+    if (existing.isNotEmpty) {
+      _selectedTags.remove(existing);
     } else {
-      _selectedTag = tag;
+      _selectedTags.add(clean);
     }
     notifyListeners();
+  }
+
+  /// Thêm một thẻ Tag vào bộ lọc
+  void addTagFilter(String tag) {
+    final clean = tag.replaceAll('#', '').trim();
+    if (clean.isEmpty) return;
+    if (!_selectedTags.any((t) => t.toLowerCase() == clean.toLowerCase())) {
+      _selectedTags.add(clean);
+      notifyListeners();
+    }
+  }
+
+  /// Gỡ bỏ một thẻ Tag khỏi bộ lọc
+  void removeTagFilter(String tag) {
+    final clean = tag.replaceAll('#', '').trim().toLowerCase();
+    _selectedTags.removeWhere((t) => t.replaceAll('#', '').trim().toLowerCase() == clean);
+    notifyListeners();
+  }
+
+  /// Xóa sạch tất cả các thẻ Tag đang lọc
+  void clearTagFilters() {
+    if (_selectedTags.isNotEmpty) {
+      _selectedTags.clear();
+      notifyListeners();
+    }
+  }
+
+  /// Cập nhật bộ lọc Tag (Tương thích ngược: nếu null thì xóa tất cả, nếu có giá trị thì toggle)
+  void setTagFilter(String? tag) {
+    if (tag == null) {
+      clearTagFilters();
+    } else {
+      toggleTagFilter(tag);
+    }
+  }
+
+  /// Cập nhật bộ lọc theo Vị trí lưu trữ vật lý (null hoặc 'all' để xóa lọc)
+  void setLocationFilter(String? location) {
+    final clean = location?.trim();
+    final effective = (clean == null || clean.isEmpty || clean.toLowerCase() == 'all') ? null : clean;
+    if (_selectedLocation != effective) {
+      _selectedLocation = effective;
+      notifyListeners();
+    }
+  }
+
+  /// Bật/tắt bộ lọc vị trí (nếu đang chọn vị trí này thì bỏ chọn, ngược lại thì chọn)
+  void toggleLocationFilter(String location) {
+    final clean = location.trim();
+    if (_selectedLocation != null && _selectedLocation!.toLowerCase() == clean.toLowerCase()) {
+      _selectedLocation = null;
+    } else {
+      _selectedLocation = clean;
+    }
+    notifyListeners();
+  }
+
+  /// Xóa sạch bộ lọc vị trí
+  void clearLocationFilter() {
+    if (_selectedLocation != null) {
+      _selectedLocation = null;
+      notifyListeners();
+    }
   }
 
   /// Cập nhật danh sách thẻ tag sở thích người dùng cho Recommendation Engine
@@ -395,7 +585,8 @@ class DocumentProvider extends ChangeNotifier {
   void resetFilters() {
     _searchQuery = '';
     _selectedCategoryId = 'all';
-    _selectedTag = null;
+    _selectedTags.clear();
+    _selectedLocation = null;
     notifyListeners();
   }
 
@@ -451,6 +642,9 @@ class DocumentProvider extends ChangeNotifier {
           categoryId: m['category_id'] as String? ?? 'all',
           filePathOrUrl: m['storage_path'] as String?,
           notes: m['description'] as String?,
+          tags: (m['tags_cache'] != null)
+              ? List<String>.from(m['tags_cache'])
+              : (m['tags'] != null ? List<String>.from(m['tags']) : const []),
           locationName: m['location_name'] as String?,
           building: m['building'] as String?,
           floor: m['floor'] as String?,
@@ -511,6 +705,7 @@ class DocumentProvider extends ChangeNotifier {
             'subject': document.subject,
             'category_id': document.categoryId,
             'description': document.notes,
+            'tags_cache': document.tags,
             if (document.locationName != null) 'location_name': document.locationName,
             if (document.building != null) 'building': document.building,
             if (document.floor != null) 'floor': document.floor,
@@ -530,8 +725,39 @@ class DocumentProvider extends ChangeNotifier {
         }
         notifyListeners();
       } else {
-        // Người dùng là Owner: Cập nhật thông qua Repository chuẩn
+        // Người dùng là Owner: Cập nhật thông qua Repository chuẩn (Drift SQLite)
         await _repository.updateDocument(document);
+
+        // Đồng bộ dữ liệu mới nhất (bao gồm tags_cache, location, notes) lên Supabase nếu online
+        if (SupabaseService.instance.isAvailable) {
+          try {
+            final docUuid = SupabaseDocumentModel.toValidUuid(document.id);
+            await SupabaseService.instance.updateDocumentMetadata(
+              id: docUuid,
+              data: {
+                'title': document.title,
+                'subject': document.subject,
+                'category_id': document.categoryId,
+                'description': document.notes,
+                'tags_cache': document.tags,
+                if (document.locationName != null) 'location_name': document.locationName,
+                if (document.building != null) 'building': document.building,
+                if (document.floor != null) 'floor': document.floor,
+                if (document.shelf != null) 'shelf': document.shelf,
+                if (document.physicalLocation != null) 'physical_location': document.physicalLocation,
+                if (document.latitude != null) 'latitude': document.latitude,
+                if (document.longitude != null) 'longitude': document.longitude,
+                if (document.locationNotes != null) 'location_notes': document.locationNotes,
+                'is_available_for_borrow': document.isAvailableForBorrow,
+                'is_discoverable': document.isDiscoverable,
+                'is_borrowable': document.isBorrowable,
+              },
+            );
+          } catch (e) {
+            debugPrint('[DocumentProvider] Lưu ý: không thể đồng bộ metadata lên Supabase ngay lúc này: $e');
+          }
+        }
+
         final idx = _documents.indexWhere((d) => d.id == document.id);
         if (idx != -1) {
           _documents[idx] = document;
@@ -696,7 +922,7 @@ class DocumentProvider extends ChangeNotifier {
         search: search ?? _searchQuery,
         subject: subject,
         categoryId: categoryId ?? _selectedCategoryId,
-        tag: tag ?? _selectedTag,
+        tag: tag ?? selectedTag,
       );
       _discoverableDocuments = docs;
     } catch (e) {

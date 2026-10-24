@@ -64,6 +64,30 @@ class SupabaseService {
     }
   }
 
+  /// Trích xuất danh sách tag an toàn từ dữ liệu Supabase (hỗ trợ cả JSON array, PostgreSQL array string, `List<dynamic>`)
+  static List<String> parseTagsList(dynamic raw) {
+    if (raw == null) return const [];
+    if (raw is List) {
+      return raw
+          .map((e) => e.toString().replaceAll('#', '').trim())
+          .where((e) => e.isNotEmpty)
+          .toList();
+    }
+    if (raw is String) {
+      var str = raw.trim();
+      if (str.startsWith('{') && str.endsWith('}')) {
+        str = str.substring(1, str.length - 1);
+      }
+      if (str.isEmpty) return const [];
+      return str
+          .split(',')
+          .map((e) => e.replaceAll('"', '').replaceAll('#', '').trim())
+          .where((e) => e.isNotEmpty)
+          .toList();
+    }
+    return const [];
+  }
+
   /// Tra cứu UUID trong `public.users` của người dùng hiện tại đang đăng nhập qua Firebase
   Future<String?> resolveOwnerId() async {
     final client = this.client;
@@ -212,6 +236,32 @@ class SupabaseService {
     }
     if (data.containsKey('is_borrowable')) {
       sanitizedPayload['is_borrowable'] = data['is_borrowable'];
+    }
+    // Hỗ trợ cập nhật danh sách thẻ nhãn (Tags / Hashtags)
+    if (data.containsKey('tags_cache')) {
+      final t = data['tags_cache'];
+      if (t == null) {
+        sanitizedPayload['tags_cache'] = <String>[];
+      } else if (t is List) {
+        sanitizedPayload['tags_cache'] = t
+            .map((e) => e.toString().replaceAll('#', '').trim())
+            .where((e) => e.isNotEmpty)
+            .toList();
+      } else {
+        sanitizedPayload['tags_cache'] = parseTagsList(t);
+      }
+    } else if (data.containsKey('tags')) {
+      final t = data['tags'];
+      if (t == null) {
+        sanitizedPayload['tags_cache'] = <String>[];
+      } else if (t is List) {
+        sanitizedPayload['tags_cache'] = t
+            .map((e) => e.toString().replaceAll('#', '').trim())
+            .where((e) => e.isNotEmpty)
+            .toList();
+      } else {
+        sanitizedPayload['tags_cache'] = parseTagsList(t);
+      }
     }
     // Hỗ trợ trường hợp Owner chủ động đổi file mới
     if (data.containsKey('file_name') && data['file_name'] != null) {
@@ -682,7 +732,7 @@ class SupabaseService {
           categoryId: m['category_id'] as String? ?? 'all',
           filePathOrUrl: m['storage_path'] as String?,
           notes: m['description'] as String?,
-          tags: (m['tags_cache'] != null) ? List<String>.from(m['tags_cache']) : const [],
+          tags: parseTagsList(m['tags_cache'] ?? m['tags']),
           locationName: m['location_name'] as String?,
           building: m['building'] as String?,
           floor: m['floor'] as String?,
@@ -1018,7 +1068,7 @@ class SupabaseService {
       // 2. Fallback trực tiếp qua PostgREST nếu RPC chưa được nạp
       var query = client
           .from('documents')
-          .select('id, title, description, subject, category_id, is_discoverable, is_borrowable, location_name, building, floor, shelf, created_at, owner:users!owner_id(email, display_name)')
+          .select('id, title, description, subject, category_id, is_discoverable, is_borrowable, tags_cache, location_name, building, floor, shelf, physical_location, latitude, longitude, location_notes, created_at, owner:users!owner_id(email, display_name)')
           .eq('is_discoverable', true);
 
       if (categoryId != null && categoryId != 'all') {
@@ -1040,16 +1090,25 @@ class SupabaseService {
             final map = r as Map<String, dynamic>;
             final ownerMap = map['owner'] as Map<String, dynamic>?;
             final isBorrow = map['is_borrowable'] as bool? ?? false;
+            final tagsRaw = map['tags_cache'];
+            final tagsList = (tagsRaw is List)
+                ? tagsRaw.map((e) => e.toString()).toList()
+                : <String>[];
             return DocumentModel(
               id: map['id'] as String? ?? '',
               title: map['title'] as String? ?? '',
               subject: map['subject'] as String? ?? '',
               categoryId: map['category_id'] as String? ?? 'all',
               notes: map['description'] as String?,
+              tags: tagsList,
               locationName: map['location_name'] as String?,
               building: map['building'] as String?,
               floor: map['floor'] as String?,
               shelf: map['shelf'] as String?,
+              physicalLocation: map['physical_location'] as String?,
+              latitude: (map['latitude'] as num?)?.toDouble(),
+              longitude: (map['longitude'] as num?)?.toDouble(),
+              locationNotes: map['location_notes'] as String?,
               ownerEmail: ownerMap != null ? ownerMap['email'] as String? : null,
               ownerName: ownerMap != null ? ownerMap['display_name'] as String? : null,
               isDiscoverable: true,
@@ -1536,6 +1595,7 @@ class SupabaseService {
           categoryId: map['category_id'] as String? ?? 'all',
           filePathOrUrl: map['storage_path'] as String?,
           notes: map['description'] as String?,
+          tags: parseTagsList(map['tags_cache'] ?? map['tags']),
           locationName: map['location_name'] as String?,
           building: map['building'] as String?,
           floor: map['floor'] as String?,

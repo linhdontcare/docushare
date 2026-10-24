@@ -196,37 +196,61 @@ class _TagInputWidgetState extends State<TagInputWidget> {
   }
 }
 
-/// Thanh cuộn chọn Tag nhanh trên HomeScreen
+/// Thanh cuộn chọn Tag nhanh trên HomeScreen hỗ trợ chọn 1 hoặc nhiều hashtag
 class TagFilterBarWidget extends StatelessWidget {
   final List<String> tags;
+  final Set<String>? selectedTags;
   final String? selectedTag;
-  final ValueChanged<String?> onTagSelected;
+  final ValueChanged<String>? onTagToggled;
+  final ValueChanged<String?>? onTagSelected;
+  final VoidCallback? onClearAll;
 
   const TagFilterBarWidget({
     super.key,
     required this.tags,
-    required this.selectedTag,
-    required this.onTagSelected,
+    this.selectedTags,
+    this.selectedTag,
+    this.onTagToggled,
+    this.onTagSelected,
+    this.onClearAll,
   });
 
   @override
   Widget build(BuildContext context) {
-    if (tags.isEmpty) return const SizedBox.shrink();
+    final set = <String>{...tags};
+    for (final s in kSuggestedTags) {
+      if (set.length >= 15) break;
+      set.add(s);
+    }
+    if (selectedTags != null) {
+      set.addAll(selectedTags!);
+    } else if (selectedTag != null && selectedTag!.isNotEmpty) {
+      set.add(selectedTag!);
+    }
+    final displayTags = set.toList();
+
+    final bool isAllSelected = (selectedTags == null || selectedTags!.isEmpty) &&
+        (selectedTag == null || selectedTag!.isEmpty);
 
     return SizedBox(
       height: 34,
       child: ListView.separated(
         scrollDirection: Axis.horizontal,
         padding: const EdgeInsets.symmetric(horizontal: 16),
-        itemCount: tags.length + 1,
+        itemCount: displayTags.length + 1,
         separatorBuilder: (context, index) => const SizedBox(width: 6),
         itemBuilder: (context, index) {
           if (index == 0) {
-            final isAllSelected = selectedTag == null;
             return ChoiceChip(
+              avatar: isAllSelected
+                  ? const Icon(Icons.check_rounded, size: 13, color: Colors.white)
+                  : null,
               label: const Text('Tất cả tag', style: TextStyle(fontSize: 11.5)),
               selected: isAllSelected,
-              onSelected: (_) => onTagSelected(null),
+              onSelected: (_) {
+                onClearAll?.call();
+                onTagSelected?.call(null);
+              },
               selectedColor: AppTheme.primaryColor,
               backgroundColor: AppTheme.cardBackground,
               labelStyle: TextStyle(
@@ -240,26 +264,37 @@ class TagFilterBarWidget extends StatelessWidget {
             );
           }
 
-          final tag = tags[index - 1];
-          final isSelected = selectedTag?.toLowerCase() == tag.toLowerCase();
+          final tag = displayTags[index - 1];
+          final isSelected = selectedTags != null
+              ? selectedTags!.any((t) => t.toLowerCase() == tag.toLowerCase())
+              : selectedTag?.toLowerCase() == tag.toLowerCase();
 
           return ChoiceChip(
             avatar: Icon(
-              Icons.tag_rounded,
+              isSelected ? Icons.check_circle_rounded : Icons.tag_rounded,
               size: 13,
               color: isSelected ? Colors.white : AppTheme.primaryColor,
             ),
             label: Text('#$tag', style: const TextStyle(fontSize: 11.5)),
             selected: isSelected,
-            onSelected: (_) => onTagSelected(tag),
+            onSelected: (_) {
+              if (onTagToggled != null) {
+                onTagToggled!(tag);
+              } else if (onTagSelected != null) {
+                onTagSelected!(isSelected ? null : tag);
+              }
+            },
             selectedColor: AppTheme.primaryColor,
-            backgroundColor: AppTheme.cardBackground,
+            backgroundColor: isSelected
+                ? AppTheme.primaryColor.withValues(alpha: 0.15)
+                : AppTheme.cardBackground,
             labelStyle: TextStyle(
               color: isSelected ? Colors.white : AppTheme.textPrimary,
               fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
             ),
             side: BorderSide(
               color: isSelected ? AppTheme.primaryColor : AppTheme.borderSubtle,
+              width: isSelected ? 1.5 : 1,
             ),
             shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
           );

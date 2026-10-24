@@ -21,6 +21,8 @@ import '../providers/document_provider.dart';
 import '../providers/user_provider.dart';
 import '../widgets/adaptive_navigation.dart';
 import '../widgets/borrow_request_dialog.dart';
+import '../widgets/location_filter_bar_widget.dart';
+import '../widgets/map/document_map_view_widget.dart';
 import '../widgets/recommendation_carousel_widget.dart';
 import '../widgets/responsive_document_grid.dart';
 import '../widgets/search_bar_widget.dart';
@@ -38,6 +40,7 @@ class HomeScreen extends StatefulWidget {
 
 class _HomeScreenState extends State<HomeScreen> {
   int _selectedMainTab = 0; // 0: 'Tài liệu của tôi', 1: 'Được chia sẻ với tôi', 2: 'Khám phá tài liệu'
+  bool _isMapView = false; // Chế độ xem: false = Grid/List, true = Bản đồ vị trí học tập
 
   @override
   Widget build(BuildContext context) {
@@ -122,17 +125,208 @@ class _HomeScreenState extends State<HomeScreen> {
                 RecommendationCarouselWidget(
                   recommendations: provider.recommendedDocuments,
                   onDocumentTap: (doc) => _navigateToDetail(context, doc),
-                  onTagTap: (tag) => provider.setTagFilter(tag),
+                  onTagTap: (tag) => provider.toggleTagFilter(tag),
                 ),
 
-              // Thanh lọc Tag nằm ngang
-              if (provider.allTags.isNotEmpty)
+              // Thanh lọc Tag phân loại nằm ngang (luôn hiển thị để người dùng dễ dàng phân loại theo nhãn)
+              Padding(
+                padding: const EdgeInsets.only(top: 2, bottom: 4),
+                child: TagFilterBarWidget(
+                  tags: provider.allTags,
+                  selectedTags: provider.selectedTags,
+                  selectedTag: provider.selectedTag,
+                  onTagToggled: (tag) => provider.toggleTagFilter(tag),
+                  onTagSelected: (tag) => provider.setTagFilter(tag),
+                  onClearAll: () => provider.clearTagFilters(),
+                ),
+              ),
+
+              // Banner thông tin các hashtag đang lọc (Hỗ trợ nhiều tag, toggle AND/OR, xóa từng tag)
+              if (provider.selectedTags.isNotEmpty)
                 Padding(
-                  padding: const EdgeInsets.only(top: 2, bottom: 4),
-                  child: TagFilterBarWidget(
-                    tags: provider.allTags,
-                    selectedTag: provider.selectedTag,
-                    onTagSelected: (tag) => provider.setTagFilter(tag),
+                  padding: const EdgeInsets.fromLTRB(16, 2, 16, 6),
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+                    decoration: BoxDecoration(
+                      color: AppTheme.primaryColor.withValues(alpha: 0.08),
+                      borderRadius: BorderRadius.circular(10),
+                      border: Border.all(color: AppTheme.primaryColor.withValues(alpha: 0.25)),
+                    ),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Row(
+                          children: [
+                            const Icon(Icons.tag_rounded, size: 14, color: AppTheme.primaryColor),
+                            const SizedBox(width: 6),
+                            Expanded(
+                              child: Text(
+                                'Đang lọc ${provider.selectedTags.length} hashtag (${displayedDocs.length} tài liệu)',
+                                style: const TextStyle(
+                                  fontSize: 12,
+                                  fontWeight: FontWeight.bold,
+                                  color: AppTheme.primaryColor,
+                                ),
+                              ),
+                            ),
+                            // Chuyển đổi chế độ Khớp bất kỳ (OR) / Khớp tất cả (AND) nếu chọn từ 2 hashtag trở lên
+                            if (provider.selectedTags.length > 1) ...[
+                              InkWell(
+                                onTap: () => provider.setMatchAllTags(!provider.matchAllTags),
+                                borderRadius: BorderRadius.circular(6),
+                                child: Container(
+                                  padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2.5),
+                                  decoration: BoxDecoration(
+                                    color: AppTheme.cardBackground,
+                                    borderRadius: BorderRadius.circular(6),
+                                    border: Border.all(
+                                      color: AppTheme.primaryColor.withValues(alpha: 0.4),
+                                    ),
+                                  ),
+                                  child: Row(
+                                    mainAxisSize: MainAxisSize.min,
+                                    children: [
+                                      Icon(
+                                        provider.matchAllTags ? Icons.all_inclusive_rounded : Icons.alt_route_rounded,
+                                        size: 12,
+                                        color: AppTheme.primaryColor,
+                                      ),
+                                      const SizedBox(width: 4),
+                                      Text(
+                                        provider.matchAllTags ? 'Khớp tất cả (AND)' : 'Khớp bất kỳ (OR)',
+                                        style: const TextStyle(
+                                          fontSize: 10.5,
+                                          fontWeight: FontWeight.w600,
+                                          color: AppTheme.primaryColor,
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                              ),
+                              const SizedBox(width: 8),
+                            ],
+                            InkWell(
+                              onTap: () => provider.clearTagFilters(),
+                              borderRadius: BorderRadius.circular(4),
+                              child: const Padding(
+                                padding: EdgeInsets.symmetric(horizontal: 4, vertical: 2),
+                                child: Row(
+                                  children: [
+                                    Text(
+                                      'Xóa tất cả',
+                                      style: TextStyle(
+                                        fontSize: 11,
+                                        color: Colors.redAccent,
+                                        fontWeight: FontWeight.bold,
+                                      ),
+                                    ),
+                                    SizedBox(width: 2),
+                                    Icon(Icons.close_rounded, size: 13, color: Colors.redAccent),
+                                  ],
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
+                        const SizedBox(height: 6),
+                        Wrap(
+                          spacing: 6,
+                          runSpacing: 4,
+                          children: provider.selectedTags.map((t) {
+                            return Chip(
+                              padding: EdgeInsets.zero,
+                              labelPadding: const EdgeInsets.symmetric(horizontal: 6),
+                              visualDensity: VisualDensity.compact,
+                              materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                              backgroundColor: AppTheme.primaryColor,
+                              side: BorderSide.none,
+                              label: Text(
+                                '#$t',
+                                style: const TextStyle(
+                                  fontSize: 11,
+                                  fontWeight: FontWeight.bold,
+                                  color: Colors.white,
+                                ),
+                              ),
+                              deleteIcon: const Icon(
+                                Icons.close_rounded,
+                                size: 12,
+                                color: Colors.white,
+                              ),
+                              onDeleted: () => provider.removeTagFilter(t),
+                              shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(6),
+                              ),
+                            );
+                          }).toList(),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+
+              // Thanh lọc Vị trí lưu trữ vật lý nằm ngang (Thư viện Tạ Quang Bửu, Thư viện Trung tâm, Lab AI,...)
+              Padding(
+                padding: const EdgeInsets.only(top: 2, bottom: 4),
+                child: LocationFilterBarWidget(
+                  locations: provider.allLocations,
+                  selectedLocation: provider.selectedLocation,
+                  onLocationSelected: (loc) => provider.setLocationFilter(loc),
+                  countDocumentsAtLocation: (loc) => provider.countDocumentsAtLocation(loc),
+                ),
+              ),
+
+              // Banner thông tin Vị trí đang lọc
+              if (provider.selectedLocation != null)
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(16, 2, 16, 6),
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 7),
+                    decoration: BoxDecoration(
+                      color: Colors.amber.withValues(alpha: 0.12),
+                      borderRadius: BorderRadius.circular(10),
+                      border: Border.all(color: Colors.amber.withValues(alpha: 0.4)),
+                    ),
+                    child: Row(
+                      children: [
+                        const Icon(Icons.place_rounded, size: 16, color: Colors.amber),
+                        const SizedBox(width: 8),
+                        Expanded(
+                          child: Text(
+                            'Đang lọc theo vị trí: ${provider.selectedLocation} (${displayedDocs.length} tài liệu)',
+                            style: const TextStyle(
+                              fontSize: 12,
+                              fontWeight: FontWeight.bold,
+                              color: Colors.amber,
+                            ),
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                        ),
+                        InkWell(
+                          onTap: () => provider.clearLocationFilter(),
+                          borderRadius: BorderRadius.circular(4),
+                          child: const Padding(
+                            padding: EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                            child: Row(
+                              children: [
+                                Text(
+                                  'Bỏ lọc vị trí',
+                                  style: TextStyle(
+                                    fontSize: 11,
+                                    color: Colors.redAccent,
+                                    fontWeight: FontWeight.bold,
+                                  ),
+                                ),
+                                SizedBox(width: 3),
+                                Icon(Icons.close_rounded, size: 13, color: Colors.redAccent),
+                              ],
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
                   ),
                 ),
 
@@ -172,26 +366,32 @@ class _HomeScreenState extends State<HomeScreen> {
                               )
                             : (provider.errorMessage != null && displayedDocs.isEmpty)
                                 ? _buildErrorState(context, provider)
-                                : ResponsiveContainer(
-                            maxWidth: AppBreakpoints.desktopContentMaxWidth,
-                            child: ResponsiveDocumentGrid(
-                              documents: displayedDocs,
-                              onRefresh: () async {
-                                if (_selectedMainTab == 0) {
-                                  await provider.refresh();
-                                } else if (_selectedMainTab == 1) {
-                                  await provider.fetchSharedDocuments();
-                                } else {
-                                  await provider.fetchDiscoverableDocuments();
-                                }
-                              },
-                              onTap: (doc) => _navigateToDetail(context, doc),
-                              onEdit: (doc) => _navigateToEdit(context, doc),
-                              onDelete: (doc) => _confirmDelete(context, doc),
-                              onShare: (doc) => _openShareDialog(context, doc),
-                              emptyWidget: _buildEmptyState(context, provider),
-                            ),
-                          ),
+                                : _isMapView
+                                    ? DocumentMapViewWidget(
+                                        documents: displayedDocs,
+                                        onDocumentTap: (doc) => _navigateToDetail(context, doc),
+                                        onSwitchToListView: () => setState(() => _isMapView = false),
+                                      )
+                                    : ResponsiveContainer(
+                                        maxWidth: AppBreakpoints.desktopContentMaxWidth,
+                                        child: ResponsiveDocumentGrid(
+                                          documents: displayedDocs,
+                                          onRefresh: () async {
+                                            if (_selectedMainTab == 0) {
+                                              await provider.refresh();
+                                            } else if (_selectedMainTab == 1) {
+                                              await provider.fetchSharedDocuments();
+                                            } else {
+                                              await provider.fetchDiscoverableDocuments();
+                                            }
+                                          },
+                                          onTap: (doc) => _navigateToDetail(context, doc),
+                                          onEdit: (doc) => _navigateToEdit(context, doc),
+                                          onDelete: (doc) => _confirmDelete(context, doc),
+                                          onShare: (doc) => _openShareDialog(context, doc),
+                                          emptyWidget: _buildEmptyState(context, provider),
+                                        ),
+                                      ),
               ),
             ],
           ),
@@ -265,11 +465,86 @@ class _HomeScreenState extends State<HomeScreen> {
 
               // Ô tìm kiếm nhanh trên Desktop Header
               SizedBox(
-                width: 320,
+                width: 280,
                 child: CustomSearchBar(
                   initialValue: provider.searchQuery,
                   onChanged: (query) => provider.setSearchQuery(query),
                   onClear: () => provider.setSearchQuery(''),
+                ),
+              ),
+
+              const SizedBox(width: 10),
+
+              // Toggle chuyển đổi chế độ xem: Danh sách / Bản đồ vị trí
+              Container(
+                decoration: BoxDecoration(
+                  color: AppTheme.cardBackground,
+                  borderRadius: BorderRadius.circular(12),
+                  border: Border.all(color: AppTheme.borderSubtle),
+                ),
+                padding: const EdgeInsets.all(3),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    InkWell(
+                      onTap: () => setState(() => _isMapView = false),
+                      borderRadius: BorderRadius.circular(9),
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 7),
+                        decoration: BoxDecoration(
+                          color: !_isMapView ? AppTheme.primaryColor : Colors.transparent,
+                          borderRadius: BorderRadius.circular(9),
+                        ),
+                        child: Row(
+                          children: [
+                            Icon(
+                              Icons.grid_view_rounded,
+                              size: 15,
+                              color: !_isMapView ? Colors.white : AppTheme.textSecondary,
+                            ),
+                            const SizedBox(width: 5),
+                            Text(
+                              'Danh sách',
+                              style: TextStyle(
+                                fontSize: 12,
+                                fontWeight: FontWeight.bold,
+                                color: !_isMapView ? Colors.white : AppTheme.textSecondary,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+                    InkWell(
+                      onTap: () => setState(() => _isMapView = true),
+                      borderRadius: BorderRadius.circular(9),
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 7),
+                        decoration: BoxDecoration(
+                          color: _isMapView ? Colors.amber : Colors.transparent,
+                          borderRadius: BorderRadius.circular(9),
+                        ),
+                        child: Row(
+                          children: [
+                            Icon(
+                              Icons.map_rounded,
+                              size: 15,
+                              color: _isMapView ? Colors.black : AppTheme.textSecondary,
+                            ),
+                            const SizedBox(width: 5),
+                            Text(
+                              'Bản đồ vị trí',
+                              style: TextStyle(
+                                fontSize: 12,
+                                fontWeight: FontWeight.bold,
+                                color: _isMapView ? Colors.black : AppTheme.textSecondary,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+                  ],
                 ),
               ),
 
@@ -380,6 +655,15 @@ class _HomeScreenState extends State<HomeScreen> {
                       ),
                     ],
                   ),
+                ),
+                IconButton(
+                  icon: Icon(
+                    _isMapView ? Icons.grid_view_rounded : Icons.map_rounded,
+                    size: 20,
+                  ),
+                  color: _isMapView ? Colors.amber : AppTheme.primaryColor,
+                  tooltip: _isMapView ? 'Xem danh sách tài liệu' : 'Xem bản đồ vị trí tài liệu',
+                  onPressed: () => setState(() => _isMapView = !_isMapView),
                 ),
                 if (user != null)
                   IconButton(

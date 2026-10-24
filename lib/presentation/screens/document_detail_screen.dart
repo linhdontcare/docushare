@@ -841,19 +841,46 @@ class _DocumentDetailScreenState extends State<DocumentDetailScreen> {
               runSpacing: 6,
               children: doc.tags.map((tag) {
                 final cleanTag = tag.replaceAll('#', '').trim();
-                return Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-                  decoration: BoxDecoration(
-                    color: AppTheme.primaryColor.withValues(alpha: 0.12),
-                    borderRadius: BorderRadius.circular(8),
-                    border: Border.all(color: AppTheme.primaryColor.withValues(alpha: 0.25)),
-                  ),
-                  child: Text(
-                    '#$cleanTag',
-                    style: const TextStyle(
-                      fontSize: 12,
-                      fontWeight: FontWeight.w600,
-                      color: AppTheme.primaryColor,
+                final isSelected = context.watch<DocumentProvider>().selectedTags.any(
+                      (t) => t.toLowerCase() == cleanTag.toLowerCase(),
+                    );
+                return InkWell(
+                  onTap: () {
+                    context.read<DocumentProvider>().addTagFilter(cleanTag);
+                    Navigator.of(context).pop();
+                  },
+                  borderRadius: BorderRadius.circular(8),
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                    decoration: BoxDecoration(
+                      color: isSelected
+                          ? AppTheme.primaryColor
+                          : AppTheme.primaryColor.withValues(alpha: 0.12),
+                      borderRadius: BorderRadius.circular(8),
+                      border: Border.all(
+                        color: isSelected
+                            ? AppTheme.primaryColor
+                            : AppTheme.primaryColor.withValues(alpha: 0.25),
+                      ),
+                    ),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Icon(
+                          isSelected ? Icons.check_circle_rounded : Icons.tag_rounded,
+                          size: 12,
+                          color: isSelected ? Colors.white : AppTheme.primaryColor,
+                        ),
+                        const SizedBox(width: 4),
+                        Text(
+                          '#$cleanTag',
+                          style: TextStyle(
+                            fontSize: 12,
+                            fontWeight: FontWeight.w600,
+                            color: isSelected ? Colors.white : AppTheme.primaryColor,
+                          ),
+                        ),
+                      ],
                     ),
                   ),
                 );
@@ -1040,43 +1067,36 @@ class _DocumentDetailScreenState extends State<DocumentDetailScreen> {
           const SizedBox(height: 16),
 
           if (!hasLoc) ...[
-            // Hiển thị trạng thái chưa thiết lập vị trí rõ ràng, không dùng mock data
+            // Trạng thái nhắc nhở khi chưa lưu vị trí chi tiết
             Container(
               width: double.infinity,
-              padding: const EdgeInsets.all(18),
+              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
               decoration: BoxDecoration(
                 color: AppTheme.scaffoldBackground,
                 borderRadius: BorderRadius.circular(12),
-                border: Border.all(color: AppTheme.borderSubtle),
+                border: Border.all(color: Colors.amber.withValues(alpha: 0.3)),
               ),
-              child: Column(
+              child: Row(
                 children: [
-                  const Icon(Icons.location_off_outlined, color: Colors.amber, size: 36),
-                  const SizedBox(height: 10),
-                  const Text(
-                    'Chưa thiết lập vị trí',
-                    style: TextStyle(
-                      fontSize: 14.5,
-                      fontWeight: FontWeight.bold,
-                      color: AppTheme.textPrimary,
+                  const Icon(Icons.info_outline_rounded, color: Colors.amber, size: 20),
+                  const SizedBox(width: 10),
+                  const Expanded(
+                    child: Text(
+                      'Tài liệu này chưa được gán vị trí vật lý cụ thể trong thư viện hoặc khuôn viên.',
+                      style: TextStyle(fontSize: 12, color: AppTheme.textSecondary),
                     ),
                   ),
-                  const SizedBox(height: 4),
-                  const Text(
-                    'Tài liệu này chưa được gán vị trí lưu trữ vật lý trong thư viện hoặc khuôn viên.',
-                    style: TextStyle(fontSize: 12, color: AppTheme.textSecondary),
-                    textAlign: TextAlign.center,
-                  ),
                   if (doc.canEdit) ...[
-                    const SizedBox(height: 12),
-                    FilledButton.tonalIcon(
+                    const SizedBox(width: 8),
+                    FilledButton.tonal(
                       style: FilledButton.styleFrom(
                         foregroundColor: Colors.amber,
                         backgroundColor: Colors.amber.withValues(alpha: 0.15),
+                        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                        visualDensity: VisualDensity.compact,
                       ),
                       onPressed: _navigateToEdit,
-                      icon: const Icon(Icons.add_location_alt_rounded, size: 16),
-                      label: const Text('Thiết lập vị trí ngay', style: TextStyle(fontSize: 12.5)),
+                      child: const Text('Ghim vị trí', style: TextStyle(fontSize: 11.5, fontWeight: FontWeight.bold)),
                     ),
                   ],
                 ],
@@ -1143,17 +1163,47 @@ class _DocumentDetailScreenState extends State<DocumentDetailScreen> {
                 ],
               ),
             ),
-            const SizedBox(height: 14),
-
-            // Bản đồ OpenStreetMap hiển thị marker vị trí
-            EduVaultMapWidget(
-              latitude: doc.latitude,
-              longitude: doc.longitude,
-              locationTitle: doc.displayLocationName,
-              locationSubtitle: doc.formattedLocationAddress,
-              height: 260,
+            const SizedBox(height: 10),
+            Row(
+              children: [
+                Expanded(
+                  child: OutlinedButton.icon(
+                    style: OutlinedButton.styleFrom(
+                      foregroundColor: Colors.amber,
+                      side: BorderSide(color: Colors.amber.withValues(alpha: 0.6)),
+                      padding: const EdgeInsets.symmetric(vertical: 9, horizontal: 12),
+                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                    ),
+                    onPressed: () {
+                      context.read<DocumentProvider>().setLocationFilter(
+                            doc.locationName ?? doc.displayLocationName,
+                          );
+                      Navigator.of(context).pop();
+                    },
+                    icon: const Icon(Icons.filter_alt_rounded, size: 16),
+                    label: Text(
+                      'Lọc tài liệu tại ${doc.displayLocationName}',
+                      style: const TextStyle(fontSize: 12, fontWeight: FontWeight.bold),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                  ),
+                ),
+              ],
             ),
           ],
+
+          const SizedBox(height: 14),
+
+          // Bản đồ số thu nhỏ (Minimap) OpenStreetMap - LUÔN LUÔN HIỂN THỊ
+          EduVaultMapWidget(
+            latitude: doc.latitude,
+            longitude: doc.longitude,
+            locationTitle: hasLoc ? doc.displayLocationName : 'Khuôn viên trường (Tham chiếu)',
+            locationSubtitle: hasLoc ? doc.formattedLocationAddress : null,
+            height: 260,
+            onTapSetLocation: doc.canEdit ? _navigateToEdit : null,
+          ),
         ],
       ),
     );

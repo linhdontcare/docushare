@@ -1,10 +1,11 @@
 // ==============================================================================
 // PRESENTATION WIDGET: eduvault_map_widget.dart
-// Bản đồ số tích hợp OpenStreetMap qua flutter_map và latlong2.
+// Bản đồ số mini (Minimap) tích hợp OpenStreetMap qua flutter_map và latlong2.
 // Hỗ trợ đồng thời 2 chế độ:
-// 1. Chế độ Xem (View Mode): Hiển thị vị trí tài liệu với marker, zoom và nút chỉ đường.
-// 2. Chế độ Chọn (Picker Mode): Cho phép người dùng chạm chọn tọa độ khi Thêm/Sửa tài liệu.
-// Tương thích tối ưu cho cả Flutter Web và Android/iOS.
+// 1. Chế độ Xem (View Mode): Luôn hiển thị bản đồ số sắc nét với marker, radar pulse,
+//    thanh thông tin vị trí, nút phóng to/thu nhỏ, nút mở toàn màn hình và chỉ đường.
+// 2. Chế độ Chọn (Picker Mode): Chạm chọn tọa độ khi Thêm/Sửa tài liệu, hỗ trợ crosshair.
+// Tương thích tối ưu cho cả Flutter Web (Edge/Chrome) và Android/iOS.
 // ==============================================================================
 
 import 'package:flutter/material.dart';
@@ -34,8 +35,14 @@ class EduVaultMapWidget extends StatefulWidget {
   /// Callback khi người dùng chọn tọa độ mới (chỉ dùng trong chế độ Picker)
   final ValueChanged<LatLng>? onCoordinatesChanged;
 
+  /// Callback khi bấm vào nút "Thiết lập vị trí" trên bản đồ xem
+  final VoidCallback? onTapSetLocation;
+
   /// Bộ điều khiển bản đồ từ bên ngoài nếu cần di chuyển
   final MapController? externalController;
+
+  /// Cho phép mở hộp thoại bản đồ toàn màn hình
+  final bool enableFullScreen;
 
   const EduVaultMapWidget({
     super.key,
@@ -46,19 +53,26 @@ class EduVaultMapWidget extends StatefulWidget {
     this.height = 280,
     this.isPicker = false,
     this.onCoordinatesChanged,
+    this.onTapSetLocation,
     this.externalController,
+    this.enableFullScreen = true,
   });
 
   @override
   State<EduVaultMapWidget> createState() => _EduVaultMapWidgetState();
 }
 
-class _EduVaultMapWidgetState extends State<EduVaultMapWidget> {
+class _EduVaultMapWidgetState extends State<EduVaultMapWidget>
+    with SingleTickerProviderStateMixin {
   late final MapController _mapController;
   LatLng? _currentPoint;
   bool _isMapReady = false;
 
-  // Tọa độ trung tâm mặc định (Đại học Bách Khoa Hà Nội) nếu chưa có tọa độ
+  // Hiệu ứng Animation Radar Pulse cho marker
+  late final AnimationController _pulseController;
+  late final Animation<double> _pulseAnimation;
+
+  // Tọa độ trung tâm mặc định (Đại học Bách Khoa Hà Nội - Thư viện Tạ Quang Bửu)
   static const LatLng _kDefaultCenter = LatLng(21.0049, 105.8433);
 
   @override
@@ -68,18 +82,30 @@ class _EduVaultMapWidgetState extends State<EduVaultMapWidget> {
     if (_isValidCoordinate(widget.latitude, widget.longitude)) {
       _currentPoint = LatLng(widget.latitude!, widget.longitude!);
     }
+
+    _pulseController = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 1800),
+    )..repeat();
+
+    _pulseAnimation = CurvedAnimation(
+      parent: _pulseController,
+      curve: Curves.easeOutQuad,
+    );
   }
 
   @override
   void dispose() {
     _isMapReady = false;
+    _pulseController.dispose();
     super.dispose();
   }
 
   @override
   void didUpdateWidget(covariant EduVaultMapWidget oldWidget) {
     super.didUpdateWidget(oldWidget);
-    if (widget.latitude != oldWidget.latitude || widget.longitude != oldWidget.longitude) {
+    if (widget.latitude != oldWidget.latitude ||
+        widget.longitude != oldWidget.longitude) {
       if (_isValidCoordinate(widget.latitude, widget.longitude)) {
         final newPoint = LatLng(widget.latitude!, widget.longitude!);
         setState(() => _currentPoint = newPoint);
@@ -98,6 +124,7 @@ class _EduVaultMapWidgetState extends State<EduVaultMapWidget> {
 
   bool _isValidCoordinate(double? lat, double? lng) {
     if (lat == null || lng == null) return false;
+    if (lat == 0.0 && lng == 0.0) return false;
     return lat >= -90.0 && lat <= 90.0 && lng >= -180.0 && lng <= 180.0;
   }
 
@@ -127,81 +154,99 @@ class _EduVaultMapWidgetState extends State<EduVaultMapWidget> {
     if (!_isMapReady) return;
     try {
       if (_currentPoint != null) {
-        _mapController.move(_currentPoint!, 16.0);
+        _mapController.move(_currentPoint!, 16.5);
       } else {
-        _mapController.move(_kDefaultCenter, 14.0);
+        _mapController.move(_kDefaultCenter, 15.0);
       }
     } catch (_) {}
   }
 
   Future<void> _openExternalDirections() async {
-    if (_currentPoint == null) return;
+    final target = _currentPoint ?? _kDefaultCenter;
     final url =
-        'https://www.google.com/maps/search/?api=1&query=${_currentPoint!.latitude},${_currentPoint!.longitude}';
+        'https://www.google.com/maps/search/?api=1&query=${target.latitude},${target.longitude}';
     final uri = Uri.parse(url);
     if (await canLaunchUrl(uri)) {
       await launchUrl(uri, mode: LaunchMode.externalApplication);
     }
   }
 
+  void _openFullScreenMap(BuildContext context) {
+    showDialog(
+      context: context,
+      builder: (ctx) => Dialog(
+        backgroundColor: Colors.transparent,
+        insetPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 24),
+        child: ClipRRect(
+          borderRadius: BorderRadius.circular(18),
+          child: Container(
+            width: 850,
+            height: 600,
+            color: const Color(0xFF0F172A),
+            child: Stack(
+              children: [
+                EduVaultMapWidget(
+                  latitude: widget.latitude,
+                  longitude: widget.longitude,
+                  locationTitle: widget.locationTitle,
+                  locationSubtitle: widget.locationSubtitle,
+                  height: double.infinity,
+                  isPicker: widget.isPicker,
+                  onCoordinatesChanged: widget.onCoordinatesChanged,
+                  enableFullScreen: false,
+                ),
+                Positioned(
+                  top: 12,
+                  left: 12,
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                    decoration: BoxDecoration(
+                      color: AppTheme.cardBackground.withValues(alpha: 0.9),
+                      borderRadius: BorderRadius.circular(10),
+                      border: Border.all(color: AppTheme.primaryColor.withValues(alpha: 0.4)),
+                    ),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        const Icon(Icons.map_rounded, size: 16, color: AppTheme.primaryColor),
+                        const SizedBox(width: 8),
+                        Text(
+                          widget.locationTitle ?? 'Bản đồ vị trí tài liệu',
+                          style: const TextStyle(
+                            fontSize: 13,
+                            fontWeight: FontWeight.bold,
+                            color: Colors.white,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+                Positioned(
+                  top: 12,
+                  right: 12,
+                  child: IconButton.filled(
+                    style: IconButton.styleFrom(
+                      backgroundColor: Colors.black54,
+                      foregroundColor: Colors.white,
+                    ),
+                    icon: const Icon(Icons.close_rounded, size: 20),
+                    onPressed: () => Navigator.of(ctx).pop(),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final hasValidPoint = _currentPoint != null;
-
-    // Trong chế độ View (không phải picker): nếu không có tọa độ, hiển thị placeholder
-    if (!widget.isPicker && !hasValidPoint) {
-      return Container(
-        height: widget.height,
-        width: double.infinity,
-        decoration: BoxDecoration(
-          color: AppTheme.cardBackground,
-          borderRadius: BorderRadius.circular(16),
-          border: Border.all(color: AppTheme.borderSubtle),
-        ),
-        padding: const EdgeInsets.all(24),
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            Container(
-              padding: const EdgeInsets.all(14),
-              decoration: BoxDecoration(
-                color: Colors.amber.withValues(alpha: 0.12),
-                shape: BoxShape.circle,
-              ),
-              child: const Icon(
-                Icons.location_off_rounded,
-                size: 32,
-                color: Colors.amber,
-              ),
-            ),
-            const SizedBox(height: 12),
-            const Text(
-              'Chưa thiết lập tọa độ bản đồ',
-              style: TextStyle(
-                fontSize: 15,
-                fontWeight: FontWeight.bold,
-                color: AppTheme.textPrimary,
-              ),
-            ),
-            const SizedBox(height: 6),
-            Text(
-              widget.locationTitle != null && widget.locationTitle!.isNotEmpty
-                  ? 'Vị trí đã lưu: ${widget.locationTitle}'
-                  : 'Tài liệu này chưa được gán vị trí vật lý trên bản đồ.',
-              style: const TextStyle(
-                fontSize: 12.5,
-                color: AppTheme.textSecondary,
-              ),
-              textAlign: TextAlign.center,
-              maxLines: 2,
-              overflow: TextOverflow.ellipsis,
-            ),
-          ],
-        ),
-      );
-    }
-
     final initialCenter = _currentPoint ?? _kDefaultCenter;
+    final initialZoom = hasValidPoint ? 16.5 : 14.5;
 
     return ClipRRect(
       borderRadius: BorderRadius.circular(16),
@@ -212,14 +257,14 @@ class _EduVaultMapWidgetState extends State<EduVaultMapWidget> {
           color: const Color(0xFF0F172A),
           borderRadius: BorderRadius.circular(16),
           border: Border.all(
-            color: widget.isPicker
-                ? Colors.amber.withValues(alpha: 0.5)
-                : AppTheme.primaryColor.withValues(alpha: 0.4),
+            color: hasValidPoint
+                ? AppTheme.primaryColor.withValues(alpha: 0.5)
+                : Colors.amber.withValues(alpha: 0.4),
             width: 1.2,
           ),
           boxShadow: [
             BoxShadow(
-              color: Colors.black.withValues(alpha: 0.25),
+              color: Colors.black.withValues(alpha: 0.3),
               blurRadius: 10,
               offset: const Offset(0, 4),
             ),
@@ -227,12 +272,12 @@ class _EduVaultMapWidgetState extends State<EduVaultMapWidget> {
         ),
         child: Stack(
           children: [
-            // Lớp bản đồ OpenStreetMap
+            // Lớp bản đồ OpenStreetMap luôn luôn được render trực quan
             FlutterMap(
               mapController: _mapController,
               options: MapOptions(
                 initialCenter: initialCenter,
-                initialZoom: hasValidPoint ? 16.0 : 13.0,
+                initialZoom: initialZoom,
                 minZoom: 3.0,
                 maxZoom: 18.0,
                 onTap: _handleTap,
@@ -248,68 +293,101 @@ class _EduVaultMapWidgetState extends State<EduVaultMapWidget> {
               children: [
                 TileLayer(
                   urlTemplate: 'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
-                  userAgentPackageName: 'com.linhdontcare.eduvault',
+                  userAgentPackageName: 'com.docushare.app',
                   maxZoom: 19,
                 ),
-                if (_currentPoint != null)
-                  MarkerLayer(
-                    markers: [
+
+                // Lớp Marker chính (vị trí tài liệu hoặc tâm khuôn viên)
+                MarkerLayer(
+                  markers: [
+                    if (hasValidPoint)
                       Marker(
                         point: _currentPoint!,
-                        width: 50,
-                        height: 50,
-                        alignment: Alignment.topCenter,
-                        child: _buildPinMarker(),
+                        width: 70,
+                        height: 70,
+                        alignment: Alignment.center,
+                        child: _buildPulsingMarker(
+                          isRealCoord: true,
+                          title: widget.locationTitle ?? 'Vị trí tài liệu',
+                        ),
+                      )
+                    else
+                      Marker(
+                        point: _kDefaultCenter,
+                        width: 60,
+                        height: 60,
+                        alignment: Alignment.center,
+                        child: _buildPulsingMarker(
+                          isRealCoord: false,
+                          title: 'Khuôn viên trường (Mặc định)',
+                        ),
                       ),
-                    ],
-                  ),
+                  ],
+                ),
               ],
             ),
 
-            // Badge gợi ý chế độ Picker
-            if (widget.isPicker)
-              Positioned(
-                top: 10,
-                left: 10,
-                right: 60,
-                child: Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-                  decoration: BoxDecoration(
-                    color: AppTheme.cardBackground.withValues(alpha: 0.92),
-                    borderRadius: BorderRadius.circular(10),
-                    border: Border.all(color: Colors.amber.withValues(alpha: 0.6)),
-                    boxShadow: [
-                      BoxShadow(
-                        color: Colors.black.withValues(alpha: 0.2),
-                        blurRadius: 6,
-                      ),
-                    ],
+            // Banner trạng thái trên cùng: Hiển thị tọa độ hoặc hướng dẫn
+            Positioned(
+              top: 10,
+              left: 10,
+              right: 60,
+              child: Container(
+                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                decoration: BoxDecoration(
+                  color: const Color(0xFF0F172A).withValues(alpha: 0.88),
+                  borderRadius: BorderRadius.circular(10),
+                  border: Border.all(
+                    color: hasValidPoint
+                        ? AppTheme.primaryColor.withValues(alpha: 0.6)
+                        : Colors.amber.withValues(alpha: 0.6),
                   ),
-                  child: Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      const Icon(Icons.touch_app_rounded, color: Colors.amber, size: 16),
-                      const SizedBox(width: 6),
-                      Expanded(
-                        child: Text(
-                          _currentPoint != null
-                              ? 'Tọa độ: ${_currentPoint!.latitude.toStringAsFixed(4)}°, ${_currentPoint!.longitude.toStringAsFixed(4)}°'
-                              : 'Chạm vào bản đồ để chọn tọa độ lưu trữ',
-                          style: const TextStyle(
-                            fontSize: 11.5,
-                            fontWeight: FontWeight.w600,
-                            color: AppTheme.textPrimary,
-                          ),
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
+                  boxShadow: [
+                    BoxShadow(
+                      color: Colors.black.withValues(alpha: 0.25),
+                      blurRadius: 6,
+                    ),
+                  ],
+                ),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Icon(
+                      widget.isPicker
+                          ? Icons.touch_app_rounded
+                          : (hasValidPoint
+                              ? Icons.location_on_rounded
+                              : Icons.info_outline_rounded),
+                      color: hasValidPoint ? AppTheme.primaryColor : Colors.amber,
+                      size: 15,
+                    ),
+                    const SizedBox(width: 6),
+                    Expanded(
+                      child: Text(
+                        widget.isPicker
+                            ? (_currentPoint != null
+                                ? 'Đã chọn: ${_currentPoint!.latitude.toStringAsFixed(4)}°, ${_currentPoint!.longitude.toStringAsFixed(4)}°'
+                                : 'Chạm trên bản đồ để chọn tọa độ lưu trữ')
+                            : (hasValidPoint
+                                ? (widget.locationTitle != null && widget.locationTitle!.isNotEmpty
+                                    ? widget.locationTitle!
+                                    : 'Tọa độ: ${_currentPoint!.latitude.toStringAsFixed(4)}°, ${_currentPoint!.longitude.toStringAsFixed(4)}°')
+                                : 'Bản đồ tham chiếu (Tài liệu chưa ghim GPS cụ thể)'),
+                        style: const TextStyle(
+                          fontSize: 11.5,
+                          fontWeight: FontWeight.w600,
+                          color: Colors.white,
                         ),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
                       ),
-                    ],
-                  ),
+                    ),
+                  ],
                 ),
               ),
+            ),
 
-            // Nút điều khiển Zoom và Recenter ở góc phải
+            // Cột nút điều khiển ở góc phải (Zoom, Về vị trí, Mở toàn màn hình)
             Positioned(
               right: 10,
               top: 10,
@@ -327,42 +405,81 @@ class _EduVaultMapWidgetState extends State<EduVaultMapWidget> {
                     tooltip: 'Thu nhỏ',
                     onTap: _zoomOut,
                   ),
-                  if (hasValidPoint) ...[
+                  const SizedBox(height: 6),
+                  _buildMapControlButton(
+                    icon: Icons.my_location_rounded,
+                    tooltip: hasValidPoint ? 'Về vị trí tài liệu' : 'Về trung tâm trường',
+                    onTap: _recenter,
+                    iconColor: hasValidPoint ? AppTheme.primaryColor : Colors.amber,
+                  ),
+                  if (widget.enableFullScreen) ...[
                     const SizedBox(height: 6),
                     _buildMapControlButton(
-                      icon: Icons.my_location_rounded,
-                      tooltip: 'Về vị trí tài liệu',
-                      onTap: _recenter,
-                      iconColor: AppTheme.primaryColor,
+                      icon: Icons.fullscreen_rounded,
+                      tooltip: 'Mở bản đồ lớn',
+                      onTap: () => _openFullScreenMap(context),
+                      iconColor: Colors.white,
                     ),
                   ],
                 ],
               ),
             ),
 
-            // Nút mở Google Maps ở góc dưới trái (chế độ xem)
-            if (!widget.isPicker && hasValidPoint)
-              Positioned(
-                bottom: 10,
-                left: 10,
-                child: FilledButton.icon(
-                  style: FilledButton.styleFrom(
-                    backgroundColor: AppTheme.cardBackground.withValues(alpha: 0.92),
-                    foregroundColor: Colors.white,
-                    side: const BorderSide(color: AppTheme.borderSubtle),
-                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
-                  ),
-                  onPressed: _openExternalDirections,
-                  icon: const Icon(Icons.directions_rounded, size: 16, color: Colors.amber),
-                  label: const Text(
-                    'Chỉ đường',
-                    style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold),
-                  ),
-                ),
+            // Nút Thao tác ở góc dưới trái (Chỉ đường hoặc Thiết lập vị trí)
+            Positioned(
+              bottom: 10,
+              left: 10,
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  if (!widget.isPicker) ...[
+                    FilledButton.icon(
+                      style: FilledButton.styleFrom(
+                        backgroundColor: const Color(0xFF1E293B).withValues(alpha: 0.95),
+                        foregroundColor: Colors.white,
+                        side: BorderSide(
+                          color: hasValidPoint
+                              ? AppTheme.primaryColor.withValues(alpha: 0.4)
+                              : Colors.amber.withValues(alpha: 0.4),
+                        ),
+                        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 7),
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(10),
+                        ),
+                      ),
+                      onPressed: _openExternalDirections,
+                      icon: const Icon(Icons.directions_rounded, size: 15, color: Colors.amber),
+                      label: Text(
+                        hasValidPoint ? 'Chỉ đường' : 'Mở Google Maps',
+                        style: const TextStyle(fontSize: 11.5, fontWeight: FontWeight.bold),
+                      ),
+                    ),
+                  ],
+                  if (!widget.isPicker && !hasValidPoint && widget.onTapSetLocation != null) ...[
+                    const SizedBox(width: 6),
+                    FilledButton.icon(
+                      style: FilledButton.styleFrom(
+                        backgroundColor: Colors.amber.withValues(alpha: 0.2),
+                        foregroundColor: Colors.amber,
+                        side: const BorderSide(color: Colors.amber),
+                        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 7),
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(10),
+                        ),
+                      ),
+                      onPressed: widget.onTapSetLocation,
+                      icon: const Icon(Icons.add_location_alt_rounded, size: 14),
+                      label: const Text(
+                        'Ghim vị trí',
+                        style: TextStyle(fontSize: 11.5, fontWeight: FontWeight.bold),
+                      ),
+                    ),
+                  ],
+                ],
               ),
+            ),
 
-            // Attribution OpenStreetMap ở góc dưới phải
+            // Attribution bản quyền OpenStreetMap góc dưới phải
             Positioned(
               bottom: 4,
               right: 6,
@@ -373,8 +490,8 @@ class _EduVaultMapWidgetState extends State<EduVaultMapWidget> {
                   borderRadius: BorderRadius.circular(4),
                 ),
                 child: const Text(
-                  '© OpenStreetMap contributors',
-                  style: TextStyle(fontSize: 9, color: Colors.white70),
+                  '© OpenStreetMap',
+                  style: TextStyle(fontSize: 8.5, color: Colors.white60),
                 ),
               ),
             ),
@@ -384,35 +501,63 @@ class _EduVaultMapWidgetState extends State<EduVaultMapWidget> {
     );
   }
 
-  Widget _buildPinMarker() {
-    return Column(
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        Container(
-          padding: const EdgeInsets.all(6),
-          decoration: BoxDecoration(
-            color: Colors.amber.shade600,
-            shape: BoxShape.circle,
-            border: Border.all(color: Colors.white, width: 2),
-            boxShadow: [
-              BoxShadow(
-                color: Colors.amber.withValues(alpha: 0.5),
-                blurRadius: 8,
-                offset: const Offset(0, 3),
+  /// Marker có hiệu ứng sóng radar ping và icon sách
+  Widget _buildPulsingMarker({
+    required bool isRealCoord,
+    required String title,
+  }) {
+    final baseColor = isRealCoord ? AppTheme.primaryColor : Colors.amber;
+
+    return AnimatedBuilder(
+      animation: _pulseAnimation,
+      builder: (context, child) {
+        return Stack(
+          alignment: Alignment.center,
+          children: [
+            // Vòng sóng radar tỏa ra
+            if (isRealCoord)
+              Container(
+                width: 32 + (_pulseAnimation.value * 28),
+                height: 32 + (_pulseAnimation.value * 28),
+                decoration: BoxDecoration(
+                  shape: BoxShape.circle,
+                  color: baseColor.withValues(
+                    alpha: (1.0 - _pulseAnimation.value) * 0.35,
+                  ),
+                  border: Border.all(
+                    color: baseColor.withValues(
+                      alpha: (1.0 - _pulseAnimation.value) * 0.7,
+                    ),
+                    width: 1.5,
+                  ),
+                ),
               ),
-            ],
-          ),
-          child: const Icon(
-            Icons.menu_book_rounded,
-            size: 16,
-            color: Colors.white,
-          ),
-        ),
-        CustomPaint(
-          size: const Size(10, 6),
-          painter: _TrianglePainter(color: Colors.amber.shade700),
-        ),
-      ],
+
+            // Lõi marker chính
+            Container(
+              width: 36,
+              height: 36,
+              decoration: BoxDecoration(
+                color: baseColor,
+                shape: BoxShape.circle,
+                border: Border.all(color: Colors.white, width: 2),
+                boxShadow: [
+                  BoxShadow(
+                    color: baseColor.withValues(alpha: 0.5),
+                    blurRadius: 8,
+                    offset: const Offset(0, 3),
+                  ),
+                ],
+              ),
+              child: Icon(
+                isRealCoord ? Icons.menu_book_rounded : Icons.school_rounded,
+                size: 18,
+                color: Colors.white,
+              ),
+            ),
+          ],
+        );
+      },
     );
   }
 
@@ -423,7 +568,7 @@ class _EduVaultMapWidgetState extends State<EduVaultMapWidget> {
     Color iconColor = AppTheme.textPrimary,
   }) {
     return Material(
-      color: AppTheme.cardBackground.withValues(alpha: 0.92),
+      color: const Color(0xFF1E293B).withValues(alpha: 0.9),
       borderRadius: BorderRadius.circular(8),
       elevation: 2,
       child: InkWell(
@@ -432,39 +577,17 @@ class _EduVaultMapWidgetState extends State<EduVaultMapWidget> {
         child: Tooltip(
           message: tooltip,
           child: Container(
-            width: 34,
-            height: 34,
+            width: 32,
+            height: 32,
             alignment: Alignment.center,
             decoration: BoxDecoration(
               border: Border.all(color: AppTheme.borderSubtle),
               borderRadius: BorderRadius.circular(8),
             ),
-            child: Icon(icon, size: 18, color: iconColor),
+            child: Icon(icon, size: 16, color: iconColor),
           ),
         ),
       ),
     );
   }
-}
-
-class _TrianglePainter extends CustomPainter {
-  final Color color;
-
-  const _TrianglePainter({required this.color});
-
-  @override
-  void paint(Canvas canvas, Size size) {
-    final paint = Paint()
-      ..color = color
-      ..style = PaintingStyle.fill;
-    final path = Path()
-      ..moveTo(0, 0)
-      ..lineTo(size.width / 2, size.height)
-      ..lineTo(size.width, 0)
-      ..close();
-    canvas.drawPath(path, paint);
-  }
-
-  @override
-  bool shouldRepaint(covariant CustomPainter oldDelegate) => false;
 }

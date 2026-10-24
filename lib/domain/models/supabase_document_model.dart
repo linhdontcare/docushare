@@ -27,6 +27,7 @@ class SupabaseDocumentModel {
   final double? latitude;
   final double? longitude;
   final String? locationNotes;
+  final List<String> tags;
   final bool? isAvailableForBorrow;
   final bool isDiscoverable;
   final bool isBorrowable;
@@ -52,6 +53,7 @@ class SupabaseDocumentModel {
     this.latitude,
     this.longitude,
     this.locationNotes,
+    this.tags = const [],
     this.isAvailableForBorrow,
     this.isDiscoverable = false,
     this.isBorrowable = false,
@@ -82,6 +84,30 @@ class SupabaseDocumentModel {
     return const Uuid().v5(Namespace.url.value, 'eduvault:doc:$trimmed').toLowerCase();
   }
 
+  /// Trích xuất danh sách tag an toàn từ dữ liệu Supabase (hỗ trợ cả JSON array, PostgreSQL array string, `List<dynamic>`)
+  static List<String> parseTagsList(dynamic raw) {
+    if (raw == null) return const [];
+    if (raw is List) {
+      return raw
+          .map((e) => e.toString().replaceAll('#', '').trim())
+          .where((e) => e.isNotEmpty)
+          .toList();
+    }
+    if (raw is String) {
+      var str = raw.trim();
+      if (str.startsWith('{') && str.endsWith('}')) {
+        str = str.substring(1, str.length - 1);
+      }
+      if (str.isEmpty) return const [];
+      return str
+          .split(',')
+          .map((e) => e.replaceAll('"', '').replaceAll('#', '').trim())
+          .where((e) => e.isNotEmpty)
+          .toList();
+    }
+    return const [];
+  }
+
   /// Khởi tạo từ JSON trả về bởi Supabase PostgREST
   factory SupabaseDocumentModel.fromJson(Map<String, dynamic> json) {
     return SupabaseDocumentModel(
@@ -103,6 +129,7 @@ class SupabaseDocumentModel {
       latitude: (json['latitude'] as num?)?.toDouble(),
       longitude: (json['longitude'] as num?)?.toDouble(),
       locationNotes: json['location_notes'] as String?,
+      tags: parseTagsList(json['tags_cache'] ?? json['tags']),
       isAvailableForBorrow: json['is_available_for_borrow'] as bool? ?? (json['is_borrowable'] as bool? ?? false),
       isDiscoverable: json['is_discoverable'] as bool? ?? false,
       isBorrowable: json['is_borrowable'] as bool? ?? (json['is_available_for_borrow'] as bool? ?? false),
@@ -143,6 +170,7 @@ class SupabaseDocumentModel {
       latitude: doc.latitude,
       longitude: doc.longitude,
       locationNotes: doc.locationNotes,
+      tags: doc.tags,
       isAvailableForBorrow: doc.isBorrowable,
       isDiscoverable: doc.isDiscoverable,
       isBorrowable: doc.isBorrowable,
@@ -166,6 +194,7 @@ class SupabaseDocumentModel {
       'file_type': fileType,
       'file_size': fileSize >= 0 ? fileSize : 0,
       'storage_path': storagePath,
+      'tags_cache': tags,
       'is_discoverable': isDiscoverable,
       'is_borrowable': effectiveBorrow,
       'is_available_for_borrow': effectiveBorrow,
@@ -191,6 +220,7 @@ class SupabaseDocumentModel {
       'description': description,
       'subject': subject,
       'category_id': categoryId,
+      'tags_cache': tags,
     };
     if (includeDiscoverability) {
       payload['is_discoverable'] = isDiscoverable;
@@ -221,6 +251,7 @@ class SupabaseDocumentModel {
       'file_type': fileType,
       'file_size': fileSize >= 0 ? fileSize : 0,
       'storage_path': storagePath,
+      'tags_cache': tags,
     };
     if (includeDiscoverability) {
       payload['is_discoverable'] = isDiscoverable;
@@ -251,6 +282,7 @@ class SupabaseDocumentModel {
       categoryColorHex: categoryColorHex,
       filePathOrUrl: storagePath,
       notes: description,
+      tags: tags,
       locationName: locationName,
       building: building,
       floor: floor,
@@ -286,6 +318,7 @@ class SupabaseDocumentModel {
     double? latitude,
     double? longitude,
     String? locationNotes,
+    List<String>? tags,
     bool? isAvailableForBorrow,
     bool? isDiscoverable,
     bool? isBorrowable,
@@ -312,6 +345,7 @@ class SupabaseDocumentModel {
       latitude: latitude ?? this.latitude,
       longitude: longitude ?? this.longitude,
       locationNotes: locationNotes ?? this.locationNotes,
+      tags: tags ?? this.tags,
       isAvailableForBorrow: effectiveBorrowable,
       isDiscoverable: isDiscoverable ?? this.isDiscoverable,
       isBorrowable: effectiveBorrowable,
